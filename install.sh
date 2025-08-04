@@ -1,8 +1,19 @@
 #!/bin/bash
 set -e
 
+# Determine architecture
+ARCH=$(uname -m)
+if [[ "$ARCH" == "aarch64" ]]; then
+    ZIP_NAME="linux-arm64.zip"
+elif [[ "$ARCH" == "armv7l" ]]; then
+    ZIP_NAME="linux-arm.zip"
+else
+    echo "Unsupported architecture: $ARCH"
+    exit 1
+fi
+
 # Variables
-URL="https://github.com/AdamTovatt/NetlifyDnsManager/releases/download/v1.0.0/linux-arm64.zip"
+URL="https://github.com/AdamTovatt/NetlifyDnsManager/releases/download/v1.0.0/$ZIP_NAME"
 DEST_DIR="/opt/netlify-dns-manager"
 SERVICE_FILE="/etc/systemd/system/netlify-dns-manager.service"
 ZIP_FILE="/tmp/netlify-dns-manager.zip"
@@ -14,12 +25,13 @@ mkdir -p "$DEST_DIR"
 unzip -o "$ZIP_FILE" -d "$DEST_DIR"
 
 # Move binary out of subfolder
-if ! mv "$DEST_DIR/linux-arm64/NetlifyDnsManager" "$DEST_DIR/"; then
+if ! mv "$DEST_DIR/linux-arm/NetlifyDnsManager" "$DEST_DIR/" 2>/dev/null && \
+   ! mv "$DEST_DIR/linux-arm64/NetlifyDnsManager" "$DEST_DIR/"; then
     echo "Failed to move NetlifyDnsManager binary. Check extraction path and permissions."
     exit 1
 fi
 
-rm -r "$DEST_DIR/linux-arm64"
+rm -rf "$DEST_DIR/linux-arm" "$DEST_DIR/linux-arm64"
 chmod +x "$DEST_DIR/NetlifyDnsManager"
 
 # Create systemd service file
