@@ -13,4 +13,4 @@ namespace NetlifyDnsManager.Services
         /// <returns>The application configuration.</returns>
         ApplicationConfiguration GetConfiguration();
     }
-} 
+}

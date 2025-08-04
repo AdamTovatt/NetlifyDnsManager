@@ -31,13 +31,13 @@ namespace NetlifyDnsManager.Services
             {
                 string response = await _httpClient.GetStringAsync(_baseUrl);
                 string ipAddress = response.Replace("\r\n", "").Replace("\n", "").Trim();
-                
+
                 // Validate that the response is a valid IP address
                 if (IPAddress.TryParse(ipAddress, out IPAddress? parsedAddress))
                 {
                     return ipAddress;
                 }
-                
+
                 throw new InvalidOperationException($"Invalid IP address received: {ipAddress}");
             }
             catch (HttpRequestException ex)
@@ -46,4 +46,4 @@ namespace NetlifyDnsManager.Services
             }
         }
     }
-} 
+}

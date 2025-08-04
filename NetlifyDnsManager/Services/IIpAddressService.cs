@@ -11,4 +11,4 @@ namespace NetlifyDnsManager.Services
         /// <returns>The public IP address as a string.</returns>
         Task<string> GetIpAddressAsync();
     }
-} 
+}

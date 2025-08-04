@@ -45,7 +45,7 @@ namespace NetlifyDnsManager
                     builder.Logging.ClearProviders();
                     builder.Logging.AddConsole();
                     builder.Logging.SetMinimumLevel(LogLevel.Error);
-                    
+
                     // Specifically set HttpClient logging to Error level
                     builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Error);
                     builder.Logging.AddFilter("Microsoft.Extensions.Http", LogLevel.Error);

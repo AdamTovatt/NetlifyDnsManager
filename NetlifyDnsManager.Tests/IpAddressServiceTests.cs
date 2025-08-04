@@ -34,11 +34,11 @@ namespace NetlifyDnsManager.Tests
             // Assert
             Assert.IsNotNull(ipAddress);
             Assert.IsFalse(string.IsNullOrWhiteSpace(ipAddress));
-            
+
             // Validate that it's a valid IP address format
             string[] parts = ipAddress.Split('.');
             Assert.AreEqual(4, parts.Length, "IP address should have 4 octets");
-            
+
             foreach (string part in parts)
             {
                 Assert.IsTrue(int.TryParse(part, out int octet), $"Octet '{part}' should be a valid number");
@@ -60,4 +60,4 @@ namespace NetlifyDnsManager.Tests
             Assert.AreEqual(firstIpAddress, secondIpAddress, "Multiple calls should return the same IP address");
         }
     }
-} 
+}

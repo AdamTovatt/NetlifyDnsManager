@@ -77,4 +77,4 @@ namespace NetlifyDnsManager.Services
             return true; // Default: enable logging
         }
     }
-} 
+}

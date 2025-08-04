@@ -25,4 +25,4 @@ namespace NetlifyDnsManager.Models
         /// </summary>
         public required string NetlifyAccessToken { get; set; }
     }
-} 
+}
