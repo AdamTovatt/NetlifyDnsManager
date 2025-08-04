@@ -44,3 +44,11 @@ Environment=ENABLE_LOGGING=[true/false-to-determine-if-it-should-log-all-informa
 [Install]
 WantedBy=multi-user.target
 EOF
+
+echo ""
+echo "Installation completed."
+echo "To configure the service, edit the environment variables in:"
+echo "   $SERVICE_FILE"
+echo "Then run:"
+echo "   sudo systemctl daemon-reload"
+echo "   sudo systemctl enable --now netlify-dns-manager.service"
