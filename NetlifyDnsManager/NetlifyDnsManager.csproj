@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <PublishAot>true</PublishAot>
+    <PublishAot>False</PublishAot>
     <UserSecretsId>dotnet-NetlifyDnsManager-432dd424-e7af-442c-9d08-24a28ebb1750</UserSecretsId>
   </PropertyGroup>
 
