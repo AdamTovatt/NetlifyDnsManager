@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.8.34408.163
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NetlifyDnsManager", "NetlifyDnsManager\NetlifyDnsManager.csproj", "{A82A51A0-FD44-48D8-8456-67576A638EFC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NetlifyDnsManager.Tests", "NetlifyDnsManager.Tests\NetlifyDnsManager.Tests.csproj", "{C82E6F49-C4FF-4487-9AA8-30645E34DB66}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A82A51A0-FD44-48D8-8456-67576A638EFC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A82A51A0-FD44-48D8-8456-67576A638EFC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A82A51A0-FD44-48D8-8456-67576A638EFC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A82A51A0-FD44-48D8-8456-67576A638EFC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C82E6F49-C4FF-4487-9AA8-30645E34DB66}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C82E6F49-C4FF-4487-9AA8-30645E34DB66}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C82E6F49-C4FF-4487-9AA8-30645E34DB66}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C82E6F49-C4FF-4487-9AA8-30645E34DB66}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {8FCE1B09-CDE5-4E30-A9C5-7A802F1FA4B5}
+	EndGlobalSection
+EndGlobal

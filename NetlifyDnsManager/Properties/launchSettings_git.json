@@ -1,0 +1,16 @@
+﻿{
+  "$schema": "http://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "NetlifyDnsManager": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development",
+        "NETLIFY_ACCESS_TOKEN": "",
+        "DOMAIN": "",
+        "CHECK_INTERVAL": "",
+        "ENABLE_LOGGING": ""
+      }
+    }
+  }
+}
