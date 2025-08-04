@@ -2,6 +2,37 @@
 
 A .NET worker service for managing Netlify DNS records. This service automatically updates DNS A records for multiple domains to point to the current public IP address.
 
+## Installation
+
+To install the Netlify DNS Manager service:
+
+1. Run the installation command:
+   ```bash
+   wget -qO /tmp/install.sh https://raw.githubusercontent.com/AdamTovatt/NetlifyDnsManager/refs/heads/master/install.sh && sudo bash /tmp/install.sh
+   ```
+
+2. Configure the service in `/etc/systemd/system/netlify-dns-manager.service` for example by running:
+   ```
+   sudo nano /etc/systemd/system/netlify-dns-manager.service
+   ```
+   - You may want to change the configured user that runs the service
+   - Update the environment variables as needed
+
+3. Reload the systemd daemon:
+   ```bash
+   sudo systemctl daemon-reload
+   ```
+
+4. Enable and start the service:
+   ```bash
+   sudo systemctl enable --now netlify-dns-manager.service
+   ```
+
+5. Check the service logs:
+   ```bash
+   sudo journalctl -u netlify-dns-manager.service -n 30
+   ```
+
 ## Environment Variables
 
 This application requires the following environment variables:
