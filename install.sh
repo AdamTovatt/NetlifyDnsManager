@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # Variables
 URL="https://github.com/AdamTovatt/NetlifyDnsManager/releases/download/v1.0.0/linux-arm64.zip"
@@ -11,7 +12,13 @@ USER_NAME=$(whoami)
 curl -L "$URL" -o "$ZIP_FILE"
 mkdir -p "$DEST_DIR"
 unzip -o "$ZIP_FILE" -d "$DEST_DIR"
-mv "$DEST_DIR/linux-arm64/NetlifyDnsManager" "$DEST_DIR/"
+
+# Move binary out of subfolder
+if ! mv "$DEST_DIR/linux-arm64/NetlifyDnsManager" "$DEST_DIR/"; then
+    echo "Failed to move NetlifyDnsManager binary. Check extraction path and permissions."
+    exit 1
+fi
+
 rm -r "$DEST_DIR/linux-arm64"
 chmod +x "$DEST_DIR/NetlifyDnsManager"
 
