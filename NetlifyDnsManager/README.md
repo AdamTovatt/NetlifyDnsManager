@@ -20,6 +20,7 @@ This application requires the following environment variables:
   DOMAIN_01=example.com
   DOMAIN_02=yourdomain.com
   DOMAIN_03=anotherdomain.net
+  DOMAIN_04=subdomain.anotherdomain.net
   ```
 
 ### CHECK_INTERVAL (Optional)
@@ -29,12 +30,12 @@ This application requires the following environment variables:
 
 ### ENABLE_LOGGING (Optional)
 - **Default**: true
-- **Description**: Whether to enable console logging
+- **Description**: Whether to enable console logging for information level output. Errors will always be logged. A value of true here is nice when setting up the service for the first time but can then later be changed to false to not flood the logs.
 - **Example**: `ENABLE_LOGGING=true`
 
 ## Configuration
 
-The application uses EasyReasy.EnvironmentVariables for environment variable validation. All required environment variables are validated at startup, and the application will fail to start if any required variables are missing or invalid.
+The application uses EasyReasy.EnvironmentVariables for environment variable validation. All required environment variables are validated at startup, and the application will fail to start if any required variables are missing or invalid. The application will clearly report what variables are missing.
 
 ### Domain Configuration
 
