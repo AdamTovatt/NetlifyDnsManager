@@ -11,6 +11,8 @@ USER_NAME=$(whoami)
 curl -L "$URL" -o "$ZIP_FILE"
 mkdir -p "$DEST_DIR"
 unzip -o "$ZIP_FILE" -d "$DEST_DIR"
+mv "$DEST_DIR/linux-arm64/NetlifyDnsManager" "$DEST_DIR/"
+rm -r "$DEST_DIR/linux-arm64"
 chmod +x "$DEST_DIR/NetlifyDnsManager"
 
 # Create systemd service file
