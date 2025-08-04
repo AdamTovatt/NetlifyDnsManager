@@ -23,15 +23,6 @@ USER_NAME=$(whoami)
 curl -L "$URL" -o "$ZIP_FILE"
 mkdir -p "$DEST_DIR"
 unzip -o "$ZIP_FILE" -d "$DEST_DIR"
-
-# Move binary out of subfolder
-if ! mv "$DEST_DIR/linux-arm/NetlifyDnsManager" "$DEST_DIR/" 2>/dev/null && \
-   ! mv "$DEST_DIR/linux-arm64/NetlifyDnsManager" "$DEST_DIR/"; then
-    echo "Failed to move NetlifyDnsManager binary. Check extraction path and permissions."
-    exit 1
-fi
-
-rm -rf "$DEST_DIR/linux-arm" "$DEST_DIR/linux-arm64"
 chmod +x "$DEST_DIR/NetlifyDnsManager"
 
 # Create systemd service file
