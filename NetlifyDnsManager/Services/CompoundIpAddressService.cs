@@ -40,11 +40,11 @@ namespace NetlifyDnsManager.Services
             while (tasks.Length > 0)
             {
                 Task<string> completedTask = await Task.WhenAny(tasks);
-                
+
                 try
                 {
                     string ipAddress = await completedTask;
-                    
+
                     // Validate that we got a valid IP address
                     if (!string.IsNullOrWhiteSpace(ipAddress) && IsValidIpAddress(ipAddress))
                     {
@@ -87,4 +87,4 @@ namespace NetlifyDnsManager.Services
             return true;
         }
     }
-} 
+}

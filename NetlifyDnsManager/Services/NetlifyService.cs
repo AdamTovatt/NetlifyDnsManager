@@ -68,7 +68,7 @@ namespace NetlifyDnsManager.Services
             if (string.IsNullOrWhiteSpace(value))
                 throw new ArgumentException("Value cannot be null or empty.", nameof(value));
 
-            string zoneId = GetZoneIdFromHostname(domain);
+            string zoneId = GetZoneIdFromHostname(ExtractDomainFromHostname(domain));
             string requestUrl = $"https://api.netlify.com/api/v1/dns_zones/{zoneId}/dns_records";
 
             NetlifyDnsRecord dnsRecord = new NetlifyDnsRecord(
