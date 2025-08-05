@@ -15,10 +15,14 @@ To install the Netlify DNS Manager service:
    ```
    sudo nano /etc/systemd/system/netlify-dns-manager.service
    ```
-   - You may want to change the configured user that runs the service
-   - Update the environment variables as needed
+> [!NOTE]
+> You may want to change the configured user that runs the service. It's probably set to "root" by default, but for example on a raspberry pi you might want the user "pi". But it's up to you.
+   
+> [!IMPORTANT]
+> Don't foget to update the environment variables as needed before continuing to the next step.
+> More information about the environment variables can be found further down.
 
-3. Reload the systemd daemon:
+3. When you have configured the environment variables, reload the systemd daemon:
    ```bash
    sudo systemctl daemon-reload
    ```
@@ -28,7 +32,7 @@ To install the Netlify DNS Manager service:
    sudo systemctl enable --now netlify-dns-manager.service
    ```
 
-5. Check the service logs:
+5. (Optional) Check the service logs:
    ```bash
    sudo journalctl -u netlify-dns-manager.service -n 30
    ```
@@ -43,6 +47,10 @@ This application requires the following environment variables:
 - **Description**: Your Netlify access token for API authentication
 - **Example**: `NETLIFY_ACCESS_TOKEN=your_netlify_access_token_here`
 
+> [!NOTE]
+> The Netlify access token can be optained from this page: [https://app.netlify.com/user/applications](https://app.netlify.com/user/applications#personal-access-tokens).
+> The token should be of type "Personal Access Token".
+
 ### DOMAIN_01, DOMAIN_02, etc.
 - **Required**: Yes (at least one domain)
 - **Description**: Domain names to manage DNS records for
@@ -54,15 +62,23 @@ This application requires the following environment variables:
   DOMAIN_04=subdomain.anotherdomain.net
   ```
 
+> [!TIP]
+> You can have as many domains and subdomains you want in this list. As long as the variable name starts with "DOMAIN" it will be included in the list of domains to set. Remember that all domains and subdomains included here will be configured to point to your own public ip.
+
 ### CHECK_INTERVAL (Optional)
 - **Default**: 1800 seconds (30 minutes)
 - **Description**: Interval in seconds between DNS checks and updates
 - **Example**: `CHECK_INTERVAL=3600` (1 hour)
 
+A smaller value can be configured to check for changes more often. For example, a value of `300` would mean every five minutes and would not be a problem for the cpu usage, memory nor the external apis used to check your public ip address.
+
 ### ENABLE_LOGGING (Optional)
 - **Default**: true
-- **Description**: Whether to enable console logging for information level output. Errors will always be logged. A value of true here is nice when setting up the service for the first time but can then later be changed to false to not flood the logs.
+- **Description**: Whether to enable console logging for information level output. Errors will always be logged.
 - **Example**: `ENABLE_LOGGING=true`
+
+> [!TIP]
+> A value of true for ENABLE_LOGGING is nice when setting up the service for the first time to see detailed output of what's happening to confirm everything is working as it should. This can then later be changed to false to not flood the logs over time.
 
 ## Configuration
 
@@ -88,7 +104,7 @@ CHECK_INTERVAL=1800
 ENABLE_LOGGING=true
 ```
 
-## Development
+# Development
 
 To run the application in development:
 
@@ -116,6 +132,10 @@ TEST_DOMAIN=your_actual_test_domain_here
 - **Description**: Your Netlify access token for API authentication
 - **Note**: This should be the same token used for the main application
 
+> [!NOTE]
+> The Netlify access token can be optained from this page: [https://app.netlify.com/user/applications](https://app.netlify.com/user/applications#personal-access-tokens).
+> The token should be of type "Personal Access Token".
+
 #### TEST_DOMAIN
 - **Required**: Yes
 - **Minimum Length**: 5 characters
@@ -138,7 +158,3 @@ The integration tests will:
 - Test error conditions and validation
 
 **Warning**: These tests make real API calls to Netlify and will create/delete actual DNS records on your test domain. Use a domain you control and are prepared to have test records added to.
-
-## Production
-
-In production, ensure the `NETLIFY_ACCESS_TOKEN` environment variable is properly configured in your deployment environment. 
