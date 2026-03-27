@@ -10,27 +10,124 @@ namespace NetlifyDnsManager.Services
     public class ConfigurationService : IConfigurationService
     {
         /// <summary>
+        /// The default API port used when no port is configured.
+        /// </summary>
+        internal const int DefaultApiPort = 5050;
+
+        private readonly ILogger<ConfigurationService> _logger;
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ConfigurationService"/> class.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        public ConfigurationService(ILogger<ConfigurationService> logger)
+        {
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
+
+        /// <summary>
         /// Gets the current application configuration from environment variables.
         /// </summary>
         /// <returns>The application configuration.</returns>
         public ApplicationConfiguration GetConfiguration()
         {
+            ProxyMode proxyMode = GetProxyMode();
+            List<string> domains = GetDomains();
+
+            if (domains.Count == 0)
+            {
+                _logger.LogWarning("No domains configured. Set DOMAIN_01, DOMAIN_02, etc. environment variables.");
+            }
+
             ApplicationConfiguration configuration = new ApplicationConfiguration
             {
-                // Load Netlify access token
-                NetlifyAccessToken = EnvironmentVariables.NetlifyAccessToken.GetValue(),
-
-                // Load all domains from the range
-                Domains = EnvironmentVariables.Domains.GetAllValues(),
-
-                // Load check interval (default to 1800 seconds if not specified)
+                ProxyMode = proxyMode,
                 CheckIntervalSeconds = GetCheckInterval(),
-
-                // Load logging setting (default to true if not specified)
-                EnableLogging = GetEnableLogging()
+                EnableLogging = GetEnableLogging(),
+                Domains = domains
             };
 
+            switch (proxyMode)
+            {
+                case ProxyMode.None:
+                    configuration.NetlifyAccessToken = EnvironmentVariables.NetlifyAccessToken.GetValue();
+                    break;
+
+                case ProxyMode.Server:
+                    configuration.NetlifyAccessToken = EnvironmentVariables.NetlifyAccessToken.GetValue();
+                    configuration.ApiPort = GetApiPort();
+                    configuration.JwtSecret = EnvironmentVariables.JwtSecret.GetValue();
+                    configuration.ClientsConfigPath = EnvironmentVariables.ClientsConfigPath.GetValue();
+                    break;
+
+                case ProxyMode.Client:
+                    configuration.ProxyServerUrl = EnvironmentVariables.ProxyServerUrl.GetValue();
+                    configuration.ProxyApiKey = EnvironmentVariables.ProxyApiKey.GetValue();
+                    break;
+            }
+
             return configuration;
+        }
+
+        /// <summary>
+        /// Gets the proxy mode from environment variables.
+        /// </summary>
+        /// <returns>The proxy mode. Defaults to <see cref="ProxyMode.None"/> if not set or invalid.</returns>
+        internal static ProxyMode GetProxyMode()
+        {
+            try
+            {
+                string modeValue = EnvironmentVariables.ProxyMode.GetValue();
+                if (Enum.TryParse<ProxyMode>(modeValue, ignoreCase: true, out ProxyMode mode))
+                {
+                    return mode;
+                }
+            }
+            catch (Exception)
+            {
+                // Use default if not specified
+            }
+
+            return ProxyMode.None;
+        }
+
+        /// <summary>
+        /// Gets the domains from environment variables.
+        /// </summary>
+        /// <returns>The list of domains.</returns>
+        private static List<string> GetDomains()
+        {
+            try
+            {
+                return EnvironmentVariables.Domains.GetAllValues();
+            }
+            catch (Exception)
+            {
+                return new List<string>();
+            }
+        }
+
+        /// <summary>
+        /// Gets the API port from environment variables with a default fallback.
+        /// Validates that the port is in the valid range (1-65535).
+        /// </summary>
+        /// <returns>The API port number.</returns>
+        internal static int GetApiPort()
+        {
+            try
+            {
+                string portValue = EnvironmentVariables.ApiPort.GetValue();
+                if (int.TryParse(portValue, out int port) && port >= 1 && port <= 65535)
+                {
+                    return port;
+                }
+            }
+            catch (Exception)
+            {
+                // Use default if not specified or invalid
+            }
+
+            return DefaultApiPort;
         }
 
         /// <summary>
@@ -47,7 +144,7 @@ namespace NetlifyDnsManager.Services
                     return interval;
                 }
             }
-            catch
+            catch (Exception)
             {
                 // Use default if not specified or invalid
             }
@@ -69,7 +166,7 @@ namespace NetlifyDnsManager.Services
                     return enableLogging;
                 }
             }
-            catch
+            catch (Exception)
             {
                 // Use default if not specified or invalid
             }
