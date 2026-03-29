@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install .NET Core
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run tests
+        run: dotnet test NetlifyDnsManager.Tests/NetlifyDnsManager.Tests.csproj --filter "FullyQualifiedName~ClientsConfiguration|FullyQualifiedName~ClientAuthValidation|FullyQualifiedName~DnsUpdateService|FullyQualifiedName~DnsUpdateEndpointAuthorization|FullyQualifiedName~ClientWorkerIpCaching" -c Release
+
+      - name: Publish for Linux ARM 64
+        run: |
+          cd NetlifyDnsManager
+          dotnet publish -c Release -r linux-arm64 --self-contained true -o ./publish/linux-arm64
+
+      - name: Create release archive
+        run: |
+          cd NetlifyDnsManager/publish/linux-arm64
+          zip -r ../../../netlify-dns-manager-linux-arm64.zip .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: netlify-dns-manager-linux-arm64.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
