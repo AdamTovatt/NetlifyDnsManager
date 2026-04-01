@@ -13,7 +13,7 @@ else
 fi
 
 # Variables
-URL="https://github.com/AdamTovatt/NetlifyDnsManager/releases/download/v1.0.0/$ZIP_NAME"
+URL="https://github.com/AdamTovatt/NetlifyDnsManager/releases/download/v1.1.0/$ZIP_NAME"
 DEST_DIR="/opt/netlify-dns-manager"
 SERVICE_FILE="/etc/systemd/system/netlify-dns-manager.service"
 ZIP_FILE="/tmp/netlify-dns-manager.zip"

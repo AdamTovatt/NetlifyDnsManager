@@ -11,7 +11,29 @@ The server/client modes allow you to run a single centralized instance that hold
 
 ## Installation
 
-To install the Netlify DNS Manager service:
+There are two ways to install the Netlify DNS Manager service: using the install script or using [Updaemon](https://github.com/AdamTovatt/updaemon).
+
+### Option 1: Updaemon (Recommended)
+
+If you have [Updaemon](https://github.com/AdamTovatt/updaemon) installed, you can use it to manage the service and get automatic updates:
+
+1. Register the service with updaemon:
+   ```bash
+   sudo updaemon new netlify-dns-manager --from github --remote AdamTovatt/NetlifyDnsManager
+   ```
+
+2. Download and set up the service:
+   ```bash
+   sudo updaemon init netlify-dns-manager
+   ```
+
+3. Configure the environment variables in `/etc/systemd/system/netlify-dns-manager.service` (see the [Environment Variables](#environment-variables) section below), then reload and restart:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl restart netlify-dns-manager
+   ```
+
+### Option 2: Install Script
 
 1. Run the installation command:
    ```bash
