@@ -4,7 +4,7 @@ A .NET service for managing Netlify DNS records. This service automatically upda
 
 It supports three operating modes:
 - **None** (default) — checks own address and updates Netlify directly
-- **Server** — does everything the default mode does, plus runs a web API that accepts DNS update requests from authenticated clients
+- **Server** — does everything the default mode does, plus runs a web API that accepts DNS update requests and ACME challenge records from authenticated clients
 - **Client** — checks own address and reports it to a remote server instead of updating Netlify directly
 
 The server/client modes allow you to run a single centralized instance that holds the Netlify API token, while remote instances (clients) report their IP addresses to the server. Each client authenticates with a scoped API key that only allows updating specific domains. This avoids sharing your Netlify access token.
@@ -143,7 +143,7 @@ Environment=ENABLE_LOGGING=true
 
 ### Server Mode Variables (`PROXY_MODE=server`)
 
-Server mode does everything the default mode does (manages its own domains via Netlify), plus runs a web API that accepts DNS update requests from authenticated clients.
+Server mode does everything the default mode does (manages its own domains via Netlify), plus runs a web API that accepts DNS update requests and ACME challenge records from authenticated clients.
 
 #### NETLIFY_ACCESS_TOKEN
 - **Required**: Yes
@@ -185,7 +185,7 @@ The file specified by `CLIENTS_CONFIG_PATH` defines which API keys are valid and
 }
 ```
 
-Each client can only update the domains listed in their `allowedDomains`. Attempting to update any other domain will return a 403 Forbidden response.
+Each client can only update the domains listed in their `allowedDomains`, and can only publish an ACME challenge record under one of those domains. Attempting to touch any other domain will return a 403 Forbidden response.
 
 #### Example (server mode)
 
@@ -261,9 +261,59 @@ When the IP address changes (or on first run):
 1. **Client** detects its address (the public IP by default, or the address of the interface named by `IP_SOURCE_INTERFACE`)
 2. **Client** caches the last reported address and only contacts the server when it changes
 3. **Client** authenticates with the server using its API key and receives a JWT
-4. **Client** sends `POST /api/dns/update` with `{ "domain": "...", "ip": "..." }`
+4. **Client** sends `POST /api/dns/update` with `{ "domain": "...", "ip": "..." }` and receives `{ "domain": "...", "ip": "...", "updated": true }`
 5. **Server** validates the JWT, checks the requested domain is in the client's allowed list
 6. **Server** performs the DNS update on Netlify on behalf of the client
+
+### Certificates for hosts that are not publicly reachable (ACME DNS-01)
+
+A host whose address is private cannot answer Let's Encrypt's HTTP-01 challenge, because nothing on the public internet can reach it. The DNS-01 challenge works instead: the ACME client is given a value to publish as a TXT record at `_acme-challenge.<domain>`, and the certificate is issued once the ACME server can look it up.
+
+The server publishes and removes that record on a client's behalf, so a client still needs no Netlify token of its own. Both endpoints authenticate with the same API key and authorize the same way the update endpoint does.
+
+**Publish a challenge value**
+
+```bash
+TOKEN=$(curl -s -X POST https://yourdomain.com/dns-manager/api/auth/apikey \
+  -H "Content-Type: application/json" \
+  -d '{"apiKey":"a-long-random-api-key-given-to-you"}' | jq -r .token)
+
+curl -s -X POST https://yourdomain.com/dns-manager/api/dns/challenge \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"domain":"yoursubdomain.yourdomain.com","value":"the-value-from-your-acme-client"}'
+```
+
+Both calls answer with the record the server acted on:
+
+```json
+{ "domain": "yoursubdomain.yourdomain.com", "recordName": "_acme-challenge.yoursubdomain.yourdomain.com", "created": true }
+```
+
+`recordName` is the name the value was actually published at, and `created` is false when that value was already there. `POST /api/dns/update` answers in the same shape, with `updated` in place of `created`.
+
+**Remove it again after validation**
+
+```bash
+curl -s -X DELETE "https://yourdomain.com/dns-manager/api/dns/challenge?domain=yoursubdomain.yourdomain.com" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+The response reports `deleted`, the number of records removed. Add `&value=$CERTBOT_VALIDATION` to remove one value instead of every value at that name.
+
+With certbot, the first call belongs in `--manual-auth-hook` using `$CERTBOT_DOMAIN` and `$CERTBOT_VALIDATION`, and the second in `--manual-cleanup-hook`, which needs only `$CERTBOT_DOMAIN` unless you scope the removal to one value.
+
+> [!NOTE]
+> This is a server-mode API that a client calls when its ACME client asks it to. Nothing in `PROXY_MODE=client` requests certificates on its own: the client only reports its address, and the certificate is obtained by whatever ACME client runs on the host.
+
+A few properties worth knowing:
+
+- **The client never names the record.** It sends the domain it is authorized for, and the server writes `_acme-challenge.<domain>`. A key scoped to `friend1.yourdomain.com` can therefore affect `_acme-challenge.friend1.yourdomain.com` and no other challenge name in the zone, and any other name is refused with 403. The domain may be given in any case; the spelling from the clients configuration is what the record is named after.
+- **Publishing is additive.** A second value at the same record name is added rather than replacing the first, so a certificate covering both a name and its wildcard can be validated in one go. Publishing a value that is already there changes nothing and reports `created: false`. Values are published with a 60 second TTL, so a removed challenge stops being served quickly.
+- **A name holds at most four values.** Beyond that the request is refused with 409 Conflict rather than growing the record set further, because reaching four means earlier challenges were never cleaned up. Remove them and publish again.
+- **Removal takes away only challenge records.** `DELETE` removes the TXT records at `_acme-challenge.<domain>`, leaving the domain's own records, and any `_acme-challenge` delegation record, untouched. A failure to remove them is reported as 500 rather than as a successful cleanup; a `deleted` count of 0 means there was nothing published to remove, which is also what a value-scoped removal reports when that value is not there.
+- **The periodic A record update ignores them.** The record it manages is the `A` record at the domain itself, so a challenge published during a renewal is not disturbed.
+- **Value limits.** A challenge value must be at most 255 characters, the longest a single DNS TXT string can be; a longer one is refused with 400.
 
 ## Configuration
 
