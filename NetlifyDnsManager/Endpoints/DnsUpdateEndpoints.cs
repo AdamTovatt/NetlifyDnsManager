@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Http;
 using NetlifyDnsManager.Models;
 using NetlifyDnsManager.Services;
 using System.Net;
-using System.Security.Claims;
 
 namespace NetlifyDnsManager.Endpoints
 {
@@ -21,12 +20,20 @@ namespace NetlifyDnsManager.Endpoints
         public static WebApplication MapDnsUpdateEndpoints(this WebApplication app)
         {
             app.MapPost("/api/dns/update", HandleDnsUpdateAsync)
-                .RequireAuthorization("ApiKeyOnly");
+                .RequireAuthorization(ClientRequest.ApiKeyPolicy);
 
             return app;
         }
 
-        private static async Task<IResult> HandleDnsUpdateAsync(
+        /// <summary>
+        /// Updates the A record for a domain the authenticated client is authorized for.
+        /// </summary>
+        /// <param name="request">The update request.</param>
+        /// <param name="dnsUpdateService">The service updating DNS records.</param>
+        /// <param name="httpContext">The HTTP context carrying the authenticated client.</param>
+        /// <param name="loggerFactory">The logger factory.</param>
+        /// <returns>The result of the request.</returns>
+        public static async Task<IResult> HandleDnsUpdateAsync(
             DnsUpdateRequest request,
             IDnsUpdateService dnsUpdateService,
             HttpContext httpContext,
@@ -41,37 +48,29 @@ namespace NetlifyDnsManager.Endpoints
             if (!IPAddress.TryParse(request.Ip, out _))
                 return Results.BadRequest(new { error = "Invalid IP address format." });
 
-            // Check that the authenticated client is allowed to update this domain
-            IEnumerable<string> allowedDomains = httpContext.User.Claims
-                .Where(c => c.Type == "allowed_domain")
-                .Select(c => c.Value);
+            if (!ClientDomainAuthorization.TryGetAuthorizedDomain(httpContext.User, request.Domain, out string? domain))
+                return ClientRequest.NotAuthorizedForDomain(request.Domain);
 
-            if (!allowedDomains.Contains(request.Domain, StringComparer.OrdinalIgnoreCase))
-            {
-                return Results.Json(
-                    new { error = $"Not authorized to update domain: {request.Domain}" },
-                    statusCode: StatusCodes.Status403Forbidden);
-            }
+            ILogger logger = loggerFactory.CreateLogger(typeof(DnsUpdateEndpoints));
 
-            try
+            return await ClientRequest.RunAsync(logger, "update the DNS record", domain, async () =>
             {
-                bool updated = await dnsUpdateService.UpdateDnsRecordAsync(request.Domain, request.Ip);
+                bool updated = await dnsUpdateService.UpdateDnsRecordAsync(domain, request.Ip);
+
+                logger.LogInformation(
+                    "Client {ClientName} reported {IpAddress} for {Domain} (updated: {Updated})",
+                    ClientRequest.DescribeClient(httpContext),
+                    request.Ip,
+                    domain,
+                    updated);
+
                 return Results.Ok(new
                 {
-                    domain = request.Domain,
+                    domain,
                     ip = request.Ip,
                     updated
                 });
-            }
-            catch (Exception ex)
-            {
-                ILogger logger = loggerFactory.CreateLogger("DnsUpdateEndpoints");
-                logger.LogError(ex, "Failed to update DNS record for domain {Domain}", request.Domain);
-
-                return Results.Json(
-                    new { error = $"Failed to update DNS record: {ex.Message}" },
-                    statusCode: StatusCodes.Status500InternalServerError);
-            }
+            });
         }
     }
 }

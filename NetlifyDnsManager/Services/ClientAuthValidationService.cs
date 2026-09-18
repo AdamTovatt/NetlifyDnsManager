@@ -48,7 +48,7 @@ namespace NetlifyDnsManager.Services
 
             foreach (string domain in client.AllowedDomains)
             {
-                claims.Add(new Claim("allowed_domain", domain));
+                claims.Add(new Claim(ClientDomainAuthorization.AllowedDomainClaim, domain));
             }
 
             DateTime expiresAt = DateTime.UtcNow.AddHours(1);

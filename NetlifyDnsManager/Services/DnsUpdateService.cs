@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+using NetlifyDnsManager.Helpers;
 using NetlifyDnsManager.Models;
 
 namespace NetlifyDnsManager.Services
@@ -8,7 +8,7 @@ namespace NetlifyDnsManager.Services
     /// </summary>
     public class DnsUpdateService : IDnsUpdateService
     {
-        private readonly ConcurrentDictionary<string, SemaphoreSlim> _domainLocks = new();
+        private readonly PerKeyLock _domainLocks = new PerKeyLock();
         private readonly INetlifyService _netlifyService;
         private readonly ILogger<DnsUpdateService> _logger;
 
@@ -32,27 +32,19 @@ namespace NetlifyDnsManager.Services
         /// <param name="ipAddress">The IP address to set.</param>
         /// <param name="enableLogging">Whether to log informational messages.</param>
         /// <returns>True if the record was updated, false if it was already current.</returns>
-        public async Task<bool> UpdateDnsRecordAsync(string domain, string ipAddress, bool enableLogging = true)
+        public Task<bool> UpdateDnsRecordAsync(string domain, string ipAddress, bool enableLogging = true)
         {
-            SemaphoreSlim domainLock = _domainLocks.GetOrAdd(domain, _ => new SemaphoreSlim(1, 1));
-            await domainLock.WaitAsync();
-
-            try
-            {
-                return await UpdateDnsRecordInternalAsync(domain, ipAddress, enableLogging);
-            }
-            finally
-            {
-                domainLock.Release();
-            }
+            return _domainLocks.RunAsync(domain, () => UpdateDnsRecordInternalAsync(domain, ipAddress, enableLogging));
         }
 
         private async Task<bool> UpdateDnsRecordInternalAsync(string domain, string ipAddress, bool enableLogging)
         {
             NetlifyDnsRecords allRecords = await _netlifyService.GetAllDnsRecordsAsync(domain);
 
+            // Host names are matched without regard to case, because DNS names are case insensitive:
+            // matching them exactly would add a second A record instead of replacing the first
             NetlifyDnsRecord? existingRecord = allRecords.Records.FirstOrDefault(r =>
-                r.Hostname == domain && r.Type == "A");
+                string.Equals(r.Hostname, domain, StringComparison.OrdinalIgnoreCase) && r.Type == "A");
 
             if (existingRecord != null)
             {

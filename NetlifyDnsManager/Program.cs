@@ -95,6 +95,7 @@ namespace NetlifyDnsManager
             app.UseEasyReasyAuth();
             app.AddAuthEndpoints(allowApiKeys: true, allowUsernamePassword: false);
             app.MapDnsUpdateEndpoints();
+            app.MapDnsChallengeEndpoints();
 
             app.Run();
         }
@@ -157,6 +158,7 @@ namespace NetlifyDnsManager
             });
 
             services.AddSingleton<IDnsUpdateService, DnsUpdateService>();
+            services.AddSingleton<IDnsChallengeService, DnsChallengeService>();
         }
 
         private static void ConfigureLogging(ILoggingBuilder logging)
