@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NetlifyDnsManager.Services;
 using System.Security.Claims;
 
-namespace NetlifyDnsManager.Tests
+namespace NetlifyDnsManager.Tests.TestSupport
 {
     /// <summary>
     /// Builds the HTTP context an endpoint sees for a client authenticated with an API key, carrying
@@ -38,14 +38,39 @@ namespace NetlifyDnsManager.Tests
         /// <returns>The HTTP context.</returns>
         public static HttpContext CreateContext(IEnumerable<string> allowedDomains, IEnumerable<Claim> otherClaims)
         {
-            List<Claim> claims = allowedDomains
+            return CreateContextWithExactClaims(
+                allowedDomains,
+                identityName: null,
+                otherClaims.Append(new Claim("sub", Name)));
+        }
+
+        /// <summary>
+        /// Creates a context whose token carries exactly the claims given, with no subject added, and
+        /// whose identity has a name only when one is passed. This is how a token that arrives mapped
+        /// differently is reproduced: the client's name is then not where the subject claim is.
+        /// </summary>
+        /// <param name="allowedDomains">The domains the client's key authorizes.</param>
+        /// <param name="identityName">The name the identity reports, or null for an identity with none.</param>
+        /// <param name="claims">The claims the token carries, beyond the allowed domains.</param>
+        /// <returns>The HTTP context.</returns>
+        public static HttpContext CreateContextWithExactClaims(IEnumerable<string> allowedDomains, string? identityName, IEnumerable<Claim> claims)
+        {
+            List<Claim> allClaims = allowedDomains
                 .Select(domain => new Claim(ClientDomainAuthorization.AllowedDomainClaim, domain))
                 .ToList();
 
-            claims.Add(new Claim("sub", Name));
-            claims.AddRange(otherClaims);
+            allClaims.AddRange(claims);
 
-            ClaimsIdentity identity = new ClaimsIdentity(claims, authenticationType: "apikey");
+            if (identityName != null)
+            {
+                allClaims.Add(new Claim(ClaimTypes.Name, identityName));
+            }
+
+            ClaimsIdentity identity = new ClaimsIdentity(
+                allClaims,
+                authenticationType: "apikey",
+                nameType: ClaimTypes.Name,
+                roleType: ClaimTypes.Role);
 
             return new DefaultHttpContext
             {

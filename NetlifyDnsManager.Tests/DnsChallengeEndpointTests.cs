@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Moq;
 using NetlifyDnsManager.Endpoints;
 using NetlifyDnsManager.Models;
 using NetlifyDnsManager.Services;
+using System.Security.Claims;
 
 namespace NetlifyDnsManager.Tests
 {
@@ -155,7 +157,7 @@ namespace NetlifyDnsManager.Tests
         public async Task SetChallenge_WithAValueOfExactlyTheMaximumLength_IsAccepted()
         {
             // Arrange - the boundary belongs to the accepted side
-            string longestAllowedValue = new string('a', AcmeChallenge.MaxValueLength);
+            string longestAllowedValue = new string('a', AcmeChallenge.MaxValueBytes);
 
             _challengeServiceMock.Setup(service => service.SetChallengeRecordAsync(AuthorizedDomain, longestAllowedValue, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(ChallengeSetResult.Created);
@@ -168,10 +170,10 @@ namespace NetlifyDnsManager.Tests
         }
 
         [TestMethod]
-        public async Task SetChallenge_WithAValueOneCharacterTooLong_IsRejectedAndWritesNothing()
+        public async Task SetChallenge_WithAValueOneByteTooLong_IsRejectedAndWritesNothing()
         {
             // Act
-            EndpointResponse response = await ExecuteSetAsync(AuthorizedDomain, new string('a', AcmeChallenge.MaxValueLength + 1));
+            EndpointResponse response = await ExecuteSetAsync(AuthorizedDomain, new string('a', AcmeChallenge.MaxValueBytes + 1));
 
             // Assert
             Assert.AreEqual(StatusCodes.Status400BadRequest, response.StatusCode);
@@ -307,6 +309,29 @@ namespace NetlifyDnsManager.Tests
         }
 
         [TestMethod]
+        [DataRow("")]
+        [DataRow("   ")]
+        public async Task DeleteChallenge_WithABlankValue_IsRejectedAndRemovesNothing(string value)
+        {
+            // A cleanup hook whose value variable is unset sends "?value=", which arrives as an empty
+            // string rather than as no value at all. Removing nothing and answering 200 would tell that
+            // hook the challenge record was cleaned up when it is still published
+            EndpointResponse response = await ExecuteDeleteAsync(AuthorizedDomain, value);
+
+            Assert.AreEqual(StatusCodes.Status400BadRequest, response.StatusCode);
+            VerifyNothingRemoved();
+        }
+
+        [TestMethod]
+        public async Task DeleteChallenge_ForAnotherClientsDomain_SaysWhatItIsNotAuthorizedFor()
+        {
+            // The one refusal both endpoints answer with, so it names no operation
+            EndpointResponse response = await ExecuteDeleteAsync(OtherClientsDomain, value: null);
+
+            Assert.AreEqual($"Not authorized for domain: {OtherClientsDomain}", response.Field("error"));
+        }
+
+        [TestMethod]
         public async Task DeleteChallenge_WhenTheDnsLayerFails_ReportsAServerErrorWithoutTheReason()
         {
             // Arrange - a client that read this as a success would leave the challenge record behind
@@ -377,15 +402,129 @@ namespace NetlifyDnsManager.Tests
                 Times.Once);
         }
 
-        private async Task<EndpointResponse> ExecuteSetAsync(string? domain, string? value, CancellationToken cancellationToken = default)
+        [TestMethod]
+        public async Task SetChallenge_WhenTheClientGoesAwayMidRequest_IsNotReportedAsAFailure()
+        {
+            // Arrange - the client hung up, so the request's own token is what ended the work
+            using CancellationTokenSource requestAborted = new CancellationTokenSource();
+
+            _challengeServiceMock.Setup(service => service.SetChallengeRecordAsync(AuthorizedDomain, ChallengeValue, It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new OperationCanceledException(requestAborted.Token));
+
+            requestAborted.Cancel();
+
+            // Act
+            EndpointResponse response = await ExecuteSetAsync(AuthorizedDomain, ChallengeValue, requestAborted.Token);
+
+            // Assert - an operator running with logging turned down sees errors only, and a client
+            // hanging up is not something they can act on
+            Assert.AreEqual(499, response.StatusCode);
+            Assert.AreEqual(
+                0,
+                _loggerFactory.MessagesAt(LogLevel.Error).Count,
+                $"A disconnect was logged as an error: {string.Join(" | ", _loggerFactory.MessagesAt(LogLevel.Error))}");
+            Assert.IsTrue(
+                _loggerFactory.MessagesAt(LogLevel.Information).Any(message => message.Contains(AuthorizedDomain)),
+                $"The disconnect was not recorded at all. Logged: {string.Join(" | ", _loggerFactory.Messages)}");
+        }
+
+        [TestMethod]
+        public async Task SetChallenge_WhenTheCancellationIsNotTheRequestsOwn_IsStillAFailure()
+        {
+            // Arrange - a library may cancel on a token of its own, for a timeout of its own. The
+            // request was never cancelled, so this is a failure and has to be reported as one
+            _challengeServiceMock.Setup(service => service.SetChallengeRecordAsync(AuthorizedDomain, ChallengeValue, It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new OperationCanceledException("The provider gave up waiting."));
+
+            // Act
+            EndpointResponse response = await ExecuteSetAsync(AuthorizedDomain, ChallengeValue);
+
+            // Assert
+            Assert.AreEqual(StatusCodes.Status500InternalServerError, response.StatusCode);
+            Assert.IsTrue(
+                _loggerFactory.MessagesAt(LogLevel.Error).Any(message => message.Contains("publish the challenge record")),
+                $"The failure was not logged as one. Logged: {string.Join(" | ", _loggerFactory.Messages)}");
+        }
+
+        [TestMethod]
+        public async Task SetChallenge_WhenTheIdentityCarriesAName_LogsThatNameAsTheActor()
+        {
+            // Arrange - the same token, mapped so that the name is on the identity as well as in a
+            // claim. The two names differ, so only reading the one that wins passes
+            HttpContext httpContext = AuthenticatedClient.CreateContextWithExactClaims(
+                new[] { AuthorizedDomain },
+                identityName: "the-mapped-name",
+                new[] { new Claim("sub", "the-subject-name") });
+
+            SetUpSuccessfulPublish();
+
+            // Act
+            await ExecuteSetAsync(httpContext, AuthorizedDomain, ChallengeValue);
+
+            // Assert
+            Assert.IsTrue(
+                _loggerFactory.Messages.Any(message => message.Contains("the-mapped-name")),
+                $"Logged: {string.Join(" | ", _loggerFactory.Messages)}");
+        }
+
+        [TestMethod]
+        public async Task SetChallenge_WhenTheNameIsOnlyInTheNameIdentifierClaim_LogsThatName()
+        {
+            // Arrange - a handler that maps the subject to the standard claim type instead
+            HttpContext httpContext = AuthenticatedClient.CreateContextWithExactClaims(
+                new[] { AuthorizedDomain },
+                identityName: null,
+                new[] { new Claim(ClaimTypes.NameIdentifier, "the-name-identifier") });
+
+            SetUpSuccessfulPublish();
+
+            // Act
+            await ExecuteSetAsync(httpContext, AuthorizedDomain, ChallengeValue);
+
+            // Assert
+            Assert.IsTrue(
+                _loggerFactory.Messages.Any(message => message.Contains("the-name-identifier")),
+                $"Logged: {string.Join(" | ", _loggerFactory.Messages)}");
+        }
+
+        [TestMethod]
+        public async Task SetChallenge_WhenTheTokenCarriesNoNameAtAll_SaysSoAndStillLogsTheWrite()
+        {
+            // Arrange - a token with no name anywhere must not cost the log its entry
+            HttpContext httpContext = AuthenticatedClient.CreateContextWithExactClaims(
+                new[] { AuthorizedDomain },
+                identityName: null,
+                Enumerable.Empty<Claim>());
+
+            SetUpSuccessfulPublish();
+
+            // Act
+            await ExecuteSetAsync(httpContext, AuthorizedDomain, ChallengeValue);
+
+            // Assert - the entry says the actor is unknown rather than leaving a blank where it goes
+            Assert.IsTrue(
+                _loggerFactory.Messages.Any(message => message.Contains("(unnamed)") && message.Contains(AuthorizedChallengeName)),
+                $"Logged: {string.Join(" | ", _loggerFactory.Messages)}");
+        }
+
+        private void SetUpSuccessfulPublish()
+        {
+            _challengeServiceMock.Setup(service => service.SetChallengeRecordAsync(AuthorizedDomain, ChallengeValue, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(ChallengeSetResult.Created);
+        }
+
+        private Task<EndpointResponse> ExecuteSetAsync(string? domain, string? value, CancellationToken cancellationToken = default)
+        {
+            return ExecuteSetAsync(AuthenticatedClient.CreateContext(AuthorizedDomain), domain, value, cancellationToken);
+        }
+
+        private async Task<EndpointResponse> ExecuteSetAsync(HttpContext httpContext, string? domain, string? value, CancellationToken cancellationToken = default)
         {
             DnsChallengeRequest request = new DnsChallengeRequest
             {
                 Domain = domain!,
                 Value = value!
             };
-
-            HttpContext httpContext = AuthenticatedClient.CreateContext(AuthorizedDomain);
 
             IResult result = await DnsChallengeEndpoints.HandleSetChallengeAsync(
                 request,

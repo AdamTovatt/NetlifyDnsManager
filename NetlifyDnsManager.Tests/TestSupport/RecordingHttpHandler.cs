@@ -2,7 +2,7 @@ using EasyReasy.Auth.Client;
 using System.Net;
 using System.Text;
 
-namespace NetlifyDnsManager.Tests
+namespace NetlifyDnsManager.Tests.TestSupport
 {
     /// <summary>
     /// Records every request a worker makes and answers the authentication request,

@@ -1,6 +1,4 @@
-using Moq;
 using NetlifyDnsManager.Models;
-using NetlifyDnsManager.Services;
 using System.Text.Json;
 
 namespace NetlifyDnsManager.Tests
@@ -16,15 +14,12 @@ namespace NetlifyDnsManager.Tests
 
         private static readonly TimeSpan WaitTimeout = TimeSpan.FromSeconds(20);
 
-        private int _addressReadCount;
-        private Mock<IIpAddressService> _ipAddressServiceMock = null!;
+        private CountingAddressSource _addressSource = null!;
         private RecordingHttpHandler _handler = null!;
 
         [TestInitialize]
         public void TestInitialize()
         {
-            _addressReadCount = 0;
-            _ipAddressServiceMock = new Mock<IIpAddressService>();
             _handler = new RecordingHttpHandler();
         }
 
@@ -103,27 +98,20 @@ namespace NetlifyDnsManager.Tests
 
         private void SetUpAddresses(params string[] addresses)
         {
-            Queue<string> remainingAddresses = new Queue<string>(addresses);
-            string lastAddress = addresses[^1];
-
-            _ipAddressServiceMock.Setup(service => service.GetIpAddressAsync())
-                .Callback(() => Interlocked.Increment(ref _addressReadCount))
-                .ReturnsAsync(() => remainingAddresses.Count > 0 ? remainingAddresses.Dequeue() : lastAddress);
+            _addressSource = CountingAddressSource.Returning(addresses);
         }
 
         private async Task RunCyclesAsync(int cycleCount)
         {
-            ClientWorker worker = ClientWorkerFactory.Create(_ipAddressServiceMock.Object, _handler, CheckIntervalSeconds);
+            ClientWorker worker = ClientWorkerFactory.Create(_addressSource, _handler, CheckIntervalSeconds);
 
             await worker.StartAsync(CancellationToken.None);
 
-            bool allCyclesRan = await TestWait.UntilAsync(
-                () => Volatile.Read(ref _addressReadCount) >= cycleCount,
-                WaitTimeout);
+            bool allCyclesRan = await _addressSource.WaitForReadsAsync(cycleCount, WaitTimeout);
 
             await worker.StopAsync(CancellationToken.None);
 
-            Assert.IsTrue(allCyclesRan, $"Only {Volatile.Read(ref _addressReadCount)} of {cycleCount} cycles ran.");
+            Assert.IsTrue(allCyclesRan, $"Only {_addressSource.ReadCount} of {cycleCount} cycles ran.");
         }
 
         private string ReportedAddress(int updateRequestIndex)

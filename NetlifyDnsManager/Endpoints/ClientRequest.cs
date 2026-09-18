@@ -20,14 +20,23 @@ namespace NetlifyDnsManager.Endpoints
         private const string SubjectClaim = "sub";
 
         /// <summary>
-        /// Reports that the client's key does not authorize the domain it asked for.
+        /// The status for a request its client abandoned. No client reads it, because the connection it
+        /// would travel on is the one that went away; it exists so that a disconnect is not answered
+        /// with a server error, which is what the log would then have to record.
+        /// </summary>
+        private const int ClientClosedRequestStatusCode = 499;
+
+        /// <summary>
+        /// Reports that the client's key does not authorize the domain it asked for. The wording names
+        /// no operation, because every endpoint a client can reach answers with this one: a challenge
+        /// record is published and removed here too, not only an address updated.
         /// </summary>
         /// <param name="domain">The domain the request was for.</param>
         /// <returns>A 403 result.</returns>
         public static IResult NotAuthorizedForDomain(string domain)
         {
             return Results.Json(
-                new { error = $"Not authorized to update domain: {domain}" },
+                new { error = $"Not authorized for domain: {domain}" },
                 statusCode: StatusCodes.Status403Forbidden);
         }
 
@@ -58,13 +67,29 @@ namespace NetlifyDnsManager.Endpoints
         /// <param name="logger">The endpoint's logger.</param>
         /// <param name="failureDescription">What the endpoint was doing, as a phrase for the message.</param>
         /// <param name="domain">The domain the request was for, for the log.</param>
+        /// <param name="cancellationToken">The request's token, so that a client that goes away is told apart from a failure.</param>
         /// <param name="operation">The work to run.</param>
         /// <returns>The result of the work, or a 500 result.</returns>
-        public static async Task<IResult> RunAsync(ILogger logger, string failureDescription, string domain, Func<Task<IResult>> operation)
+        public static async Task<IResult> RunAsync(
+            ILogger logger,
+            string failureDescription,
+            string domain,
+            CancellationToken cancellationToken,
+            Func<Task<IResult>> operation)
         {
             try
             {
                 return await operation();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // The client hung up, which is not a failure of ours. The condition matters: a library
+                // may cancel on a token of its own, and that is a failure and must fall through below.
+                // An operator running with logging turned down sees errors only, so dressing a
+                // disconnect up as one would fill that view with entries nothing can be done about
+                logger.LogInformation("Client went away before the request to {FailureDescription} for domain {Domain} finished", failureDescription, domain);
+
+                return Results.StatusCode(ClientClosedRequestStatusCode);
             }
             catch (Exception exception)
             {

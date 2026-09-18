@@ -1,6 +1,6 @@
 using NetlifyDnsManager.Models;
 
-namespace NetlifyDnsManager.Tests
+namespace NetlifyDnsManager.Tests.TestSupport
 {
     /// <summary>
     /// Builds the DNS records a zone returns, so tests name only what they are about.

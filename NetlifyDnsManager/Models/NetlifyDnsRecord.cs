@@ -168,6 +168,27 @@ namespace NetlifyDnsManager.Models
         }
 
         /// <summary>
+        /// Reads the value of a TXT record as the string it publishes, tolerating the quotes some DNS
+        /// providers put around a TXT value on the way out. Whether Netlify is one of them has not been
+        /// established here, so this is written to work either way rather than on a known answer:
+        /// comparing a quoted value against a bare one matches nothing, and the caller that suffers
+        /// that is record removal, which would then report success having removed nothing. The
+        /// integration test NetlifyServiceTests.AddDnsRecordAsync_PublishesATxtValueThatCanBeReadBack
+        /// publishes a value and finds it again through this method, so a run against the live API
+        /// settles which spelling comes back.
+        /// </summary>
+        /// <returns>The published string.</returns>
+        public string ReadTextValue()
+        {
+            if (Value.Length >= 2 && Value.StartsWith('"') && Value.EndsWith('"'))
+            {
+                return Value.Substring(1, Value.Length - 2);
+            }
+
+            return Value;
+        }
+
+        /// <summary>
         /// Returns the value of the DNS record as a string representation.
         /// </summary>
         /// <returns>The value of the DNS record.</returns>

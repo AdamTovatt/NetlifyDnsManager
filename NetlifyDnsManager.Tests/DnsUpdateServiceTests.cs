@@ -13,6 +13,9 @@ namespace NetlifyDnsManager.Tests
     {
         private const string Domain = "test.sakurapi.se";
 
+        // The time to live the service writes an A record with
+        private const long ARecordTtl = 1800;
+
         private Mock<INetlifyService> _netlifyServiceMock = null!;
         private DnsUpdateService _service = null!;
 
@@ -103,9 +106,10 @@ namespace NetlifyDnsManager.Tests
             // Act
             bool result = await _service.UpdateDnsRecordAsync(Domain, ip);
 
-            // Assert
+            // Assert - the record written is for this domain, not the one that was found
             Assert.IsTrue(result);
             VerifyNoRecordDeleted();
+            VerifyAdded(ip);
         }
 
         [TestMethod]
@@ -151,55 +155,49 @@ namespace NetlifyDnsManager.Tests
         {
             // Arrange - hold the first call inside its zone read until the second one has started,
             // reading the zone as it is when each call starts
-            TaskCompletionSource firstReadStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            TaskCompletionSource releaseFirstRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            List<NetlifyDnsRecord> zoneRecords = new List<NetlifyDnsRecord>();
             string ip = "1.2.3.4";
-            int readCount = 0;
-
-            _netlifyServiceMock.Setup(service => service.GetAllDnsRecordsAsync(Domain, It.IsAny<CancellationToken>()))
-                .Returns(async () =>
-                {
-                    List<NetlifyDnsRecord> zoneAtReadTime;
-
-                    lock (zoneRecords)
-                    {
-                        zoneAtReadTime = zoneRecords.ToList();
-                    }
-
-                    if (Interlocked.Increment(ref readCount) == 1)
-                    {
-                        firstReadStarted.TrySetResult();
-                        await releaseFirstRead.Task;
-                    }
-
-                    return new NetlifyDnsRecords(zoneAtReadTime);
-                });
-
-            _netlifyServiceMock.Setup(service => service.AddDnsRecordAsync(Domain, Domain, "A", ip, 1800, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(() =>
-                {
-                    NetlifyDnsRecord added = DnsRecordFactory.Create(Domain, "A", ip);
-
-                    lock (zoneRecords)
-                    {
-                        zoneRecords.Add(added);
-                    }
-
-                    return added;
-                });
+            HeldZone zone = new HeldZone(_netlifyServiceMock, Domain, Domain, "A", ip, ARecordTtl);
 
             // Act
             Task<bool> firstCall = _service.UpdateDnsRecordAsync(Domain, ip);
-            await firstReadStarted.Task;
+            await zone.FirstReadStarted;
             Task<bool> secondCall = _service.UpdateDnsRecordAsync(Domain, ip);
 
-            releaseFirstRead.TrySetResult();
+            zone.ReleaseFirstRead();
             bool[] results = await Task.WhenAll(firstCall, secondCall);
 
             // Assert - the second call saw the first one's record, so it made no change of its own
             Assert.AreEqual(1, results.Count(updated => updated), "Exactly one of the two calls should have written a record.");
             VerifyAdded(ip);
+        }
+
+        [TestMethod]
+        public async Task UpdateDnsRecordAsync_PassesTheCancellationTokenToEveryProviderCall()
+        {
+            // Arrange - a client that hung up should not leave a zone write running behind it. Every
+            // setup here matches on the token only, so a call made without it finds no setup at all
+            using CancellationTokenSource requestAborted = new CancellationTokenSource();
+            string newIp = "5.6.7.8";
+            NetlifyDnsRecord oldRecord = DnsRecordFactory.Create(Domain, "A", "1.2.3.4");
+
+            _netlifyServiceMock.Setup(service => service.GetAllDnsRecordsAsync(Domain, requestAborted.Token))
+                .ReturnsAsync(DnsRecordFactory.Zone(oldRecord));
+
+            _netlifyServiceMock.Setup(service => service.AddDnsRecordAsync(
+                    Domain, Domain, "A", newIp, ARecordTtl, requestAborted.Token))
+                .ReturnsAsync(DnsRecordFactory.Create(Domain, "A", newIp));
+
+            // Act
+            await _service.UpdateDnsRecordAsync(Domain, newIp, enableLogging: false, requestAborted.Token);
+
+            // Assert
+            _netlifyServiceMock.Verify(service => service.GetAllDnsRecordsAsync(Domain, requestAborted.Token), Times.Once);
+            _netlifyServiceMock.Verify(
+                service => service.DeleteDnsRecordAsync(It.Is<NetlifyDnsRecord>(deleted => deleted.Id == oldRecord.Id), requestAborted.Token),
+                Times.Once);
+            _netlifyServiceMock.Verify(
+                service => service.AddDnsRecordAsync(Domain, Domain, "A", newIp, ARecordTtl, requestAborted.Token),
+                Times.Once);
         }
 
         private void SetUpZone(string domain, params NetlifyDnsRecord[] records)
@@ -208,7 +206,7 @@ namespace NetlifyDnsManager.Tests
                 .ReturnsAsync(DnsRecordFactory.Zone(records));
 
             _netlifyServiceMock.Setup(service => service.AddDnsRecordAsync(
-                    domain, domain, "A", It.IsAny<string>(), 1800, It.IsAny<CancellationToken>()))
+                    domain, domain, "A", It.IsAny<string>(), ARecordTtl, It.IsAny<CancellationToken>()))
                 .ReturnsAsync((string hostname, string zone, string type, string value, long ttl, CancellationToken _) =>
                     DnsRecordFactory.Create(hostname, type, value, ttl));
         }
@@ -216,7 +214,7 @@ namespace NetlifyDnsManager.Tests
         private void VerifyAdded(string ipAddress)
         {
             _netlifyServiceMock.Verify(
-                service => service.AddDnsRecordAsync(Domain, Domain, "A", ipAddress, 1800, It.IsAny<CancellationToken>()),
+                service => service.AddDnsRecordAsync(Domain, Domain, "A", ipAddress, ARecordTtl, It.IsAny<CancellationToken>()),
                 Times.Once);
         }
 

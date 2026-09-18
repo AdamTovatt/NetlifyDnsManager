@@ -53,15 +53,15 @@ namespace NetlifyDnsManager.Endpoints
             if (string.IsNullOrWhiteSpace(request.Value))
                 return Results.BadRequest(new { error = "Challenge value is required." });
 
-            if (request.Value.Length > AcmeChallenge.MaxValueLength)
-                return Results.BadRequest(new { error = $"Challenge value cannot be longer than {AcmeChallenge.MaxValueLength} characters." });
+            if (AcmeChallenge.IsValueTooLong(request.Value))
+                return Results.BadRequest(new { error = $"Challenge value cannot be longer than {AcmeChallenge.MaxValueBytes} bytes." });
 
             if (!ClientDomainAuthorization.TryGetAuthorizedDomain(httpContext.User, request.Domain, out string? domain))
                 return ClientRequest.NotAuthorizedForDomain(request.Domain);
 
             ILogger logger = loggerFactory.CreateLogger(typeof(DnsChallengeEndpoints));
 
-            return await ClientRequest.RunAsync(logger, "publish the challenge record", domain, async () =>
+            return await ClientRequest.RunAsync(logger, "publish the challenge record", domain, cancellationToken, async () =>
             {
                 ChallengeSetResult result = await dnsChallengeService.SetChallengeRecordAsync(domain, request.Value, cancellationToken);
                 string recordName = AcmeChallenge.RecordNameFor(domain);
@@ -113,12 +113,19 @@ namespace NetlifyDnsManager.Endpoints
             if (string.IsNullOrWhiteSpace(domain))
                 return Results.BadRequest(new { error = "Domain is required." });
 
+            // A query string that carries the key with nothing after it binds to an empty string, not
+            // to null, which is what "&value=$CERTBOT_VALIDATION" becomes when the variable is unset.
+            // That would match no value and report the removal of nothing as a success, so it is
+            // refused: leaving the key out entirely is how every value is asked for
+            if (value != null && string.IsNullOrWhiteSpace(value))
+                return Results.BadRequest(new { error = "Challenge value cannot be blank. Leave the value parameter out to remove every value." });
+
             if (!ClientDomainAuthorization.TryGetAuthorizedDomain(httpContext.User, domain, out string? authorizedDomain))
                 return ClientRequest.NotAuthorizedForDomain(domain);
 
             ILogger logger = loggerFactory.CreateLogger(typeof(DnsChallengeEndpoints));
 
-            return await ClientRequest.RunAsync(logger, "remove the challenge records", authorizedDomain, async () =>
+            return await ClientRequest.RunAsync(logger, "remove the challenge records", authorizedDomain, cancellationToken, async () =>
             {
                 int deleted = await dnsChallengeService.DeleteChallengeRecordsAsync(authorizedDomain, value, cancellationToken);
                 string recordName = AcmeChallenge.RecordNameFor(authorizedDomain);

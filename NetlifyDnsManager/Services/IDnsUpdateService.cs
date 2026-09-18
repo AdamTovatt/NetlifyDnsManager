@@ -11,7 +11,8 @@ namespace NetlifyDnsManager.Services
         /// <param name="domain">The domain to update.</param>
         /// <param name="ipAddress">The IP address to set.</param>
         /// <param name="enableLogging">Whether to log informational messages.</param>
+        /// <param name="cancellationToken">Optional cancellation token to cancel the operation.</param>
         /// <returns>True if the record was updated, false if it was already current.</returns>
-        Task<bool> UpdateDnsRecordAsync(string domain, string ipAddress, bool enableLogging = true);
+        Task<bool> UpdateDnsRecordAsync(string domain, string ipAddress, bool enableLogging = true, CancellationToken cancellationToken = default);
     }
 }

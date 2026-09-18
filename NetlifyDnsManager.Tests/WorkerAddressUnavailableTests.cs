@@ -29,23 +29,21 @@ namespace NetlifyDnsManager.Tests
         public async Task Worker_WhenAddressSourceFails_UpdatesNoDnsRecord()
         {
             // Arrange
-            int addressReadCount = 0;
-            Mock<IIpAddressService> ipAddressServiceMock = new Mock<IIpAddressService>();
-            ipAddressServiceMock.Setup(service => service.GetIpAddressAsync())
-                .Callback(() => Interlocked.Increment(ref addressReadCount))
-                .ThrowsAsync(new InvalidOperationException("Network interface 'wg0' has no IPv4 address assigned."));
+            CountingAddressSource addressSource = CountingAddressSource.Failing(
+                new InvalidOperationException("Network interface 'wg0' has no IPv4 address assigned."));
 
-            Worker worker = CreateWorker(ipAddressServiceMock.Object);
+            Worker worker = CreateWorker(addressSource);
 
             // Act
             await worker.StartAsync(CancellationToken.None);
-            bool cycleRan = await TestWait.UntilAsync(() => Volatile.Read(ref addressReadCount) > 0, WaitTimeout);
+            bool cycleRan = await addressSource.WaitForReadsAsync(1, WaitTimeout);
             await worker.StopAsync(CancellationToken.None);
 
             // Assert
             Assert.IsTrue(cycleRan, "The worker never read the address source, so this test proves nothing.");
             _dnsUpdateServiceMock.Verify(
-                service => service.UpdateDnsRecordAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()),
+                service => service.UpdateDnsRecordAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
                 Times.Never());
         }
 
@@ -53,16 +51,15 @@ namespace NetlifyDnsManager.Tests
         public async Task Worker_WhenAddressIsAvailable_UpdatesTheDnsRecordWithThatAddress()
         {
             // Arrange - the same harness with a working source, to prove the absence above is meaningful
-            Mock<IIpAddressService> ipAddressServiceMock = new Mock<IIpAddressService>();
-            ipAddressServiceMock.Setup(service => service.GetIpAddressAsync()).ReturnsAsync(InterfaceAddress);
+            CountingAddressSource addressSource = CountingAddressSource.Returning(InterfaceAddress);
 
             int updateCount = 0;
             _dnsUpdateServiceMock
-                .Setup(service => service.UpdateDnsRecordAsync(Domain, InterfaceAddress, It.IsAny<bool>()))
+                .Setup(service => service.UpdateDnsRecordAsync(Domain, InterfaceAddress, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                 .Callback(() => Interlocked.Increment(ref updateCount))
                 .ReturnsAsync(true);
 
-            Worker worker = CreateWorker(ipAddressServiceMock.Object);
+            Worker worker = CreateWorker(addressSource);
 
             // Act
             await worker.StartAsync(CancellationToken.None);
@@ -71,7 +68,7 @@ namespace NetlifyDnsManager.Tests
 
             // Assert - the domain and the address reach the update service in those positions
             _dnsUpdateServiceMock.Verify(
-                service => service.UpdateDnsRecordAsync(Domain, InterfaceAddress, It.IsAny<bool>()),
+                service => service.UpdateDnsRecordAsync(Domain, InterfaceAddress, It.IsAny<bool>(), It.IsAny<CancellationToken>()),
                 Times.AtLeastOnce());
         }
 

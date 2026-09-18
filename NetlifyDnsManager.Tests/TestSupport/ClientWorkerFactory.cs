@@ -4,7 +4,7 @@ using Moq;
 using NetlifyDnsManager.Models;
 using NetlifyDnsManager.Services;
 
-namespace NetlifyDnsManager.Tests
+namespace NetlifyDnsManager.Tests.TestSupport
 {
     /// <summary>
     /// Builds a real <see cref="ClientWorker"/> whose only fakes are the address source and the
