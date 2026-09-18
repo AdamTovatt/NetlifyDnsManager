@@ -26,6 +26,11 @@ namespace NetlifyDnsManager.Services
         }
 
         /// <summary>
+        /// Gets a description of where this service reads the address from.
+        /// </summary>
+        public string Description => "public IP services";
+
+        /// <summary>
         /// Gets the current public IP address by trying multiple services concurrently.
         /// </summary>
         /// <returns>The public IP address as a string.</returns>

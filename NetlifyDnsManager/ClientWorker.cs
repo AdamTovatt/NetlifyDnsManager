@@ -44,8 +44,8 @@ namespace NetlifyDnsManager
             if (configuration.EnableLogging)
             {
                 _logger.LogInformation("Started Netlify DNS Manager in client mode");
-                _logger.LogInformation("Configuration: CheckInterval={CheckInterval}s, Server={ServerUrl}, Domains={Domains}",
-                    configuration.CheckIntervalSeconds, configuration.ProxyServerUrl, string.Join(", ", configuration.Domains));
+                _logger.LogInformation("Configuration: CheckInterval={CheckInterval}s, Server={ServerUrl}, Domains={Domains}, AddressSource={AddressSource}",
+                    configuration.CheckIntervalSeconds, configuration.ProxyServerUrl, string.Join(", ", configuration.Domains), _ipAddressService.Description);
             }
 
             while (!stoppingToken.IsCancellationRequested)

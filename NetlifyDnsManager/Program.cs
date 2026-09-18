@@ -136,7 +136,7 @@ namespace NetlifyDnsManager
         private static void RegisterCommonServices(IServiceCollection services)
         {
             services.AddHttpClient();
-            services.AddSingleton<IIpAddressService, CompoundIpAddressService>();
+            services.AddIpAddressService();
             services.AddSingleton<IConfigurationService, ConfigurationService>();
         }
 
@@ -161,22 +161,22 @@ namespace NetlifyDnsManager
 
         private static void ConfigureLogging(ILoggingBuilder logging)
         {
-            try
-            {
-                string loggingValue = EnvironmentVariables.EnableLogging.GetValue();
-                if (bool.TryParse(loggingValue, out bool enableLogging) && !enableLogging)
-                {
-                    logging.ClearProviders();
-                    logging.AddConsole();
-                    logging.SetMinimumLevel(LogLevel.Error);
-                    logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Error);
-                    logging.AddFilter("Microsoft.Extensions.Http", LogLevel.Error);
-                }
-            }
-            catch (Exception)
+            string? loggingValue = ConfigurationService.GetOptionalValue(EnvironmentVariables.EnableLogging);
+
+            if (loggingValue == null)
             {
                 // If ENABLE_LOGGING is not set, default to Information level
                 logging.SetMinimumLevel(LogLevel.Information);
+                return;
+            }
+
+            if (bool.TryParse(loggingValue, out bool enableLogging) && !enableLogging)
+            {
+                logging.ClearProviders();
+                logging.AddConsole();
+                logging.SetMinimumLevel(LogLevel.Error);
+                logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Error);
+                logging.AddFilter("Microsoft.Extensions.Http", LogLevel.Error);
             }
         }
     }

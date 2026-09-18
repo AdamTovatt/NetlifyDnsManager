@@ -1,11 +1,11 @@
 # Netlify DNS Manager
 
-A .NET service for managing Netlify DNS records. This service automatically updates DNS A records for multiple domains to point to the current public IP address.
+A .NET service for managing Netlify DNS records. This service automatically updates DNS A records for multiple domains to point to the current address of the host, which is its public IP address by default, or the address of a named local network interface when `IP_SOURCE_INTERFACE` is set.
 
 It supports three operating modes:
-- **None** (default) — checks own public IP and updates Netlify directly
+- **None** (default) — checks own address and updates Netlify directly
 - **Server** — does everything the default mode does, plus runs a web API that accepts DNS update requests from authenticated clients
-- **Client** — checks own public IP and reports it to a remote server instead of updating Netlify directly
+- **Client** — checks own address and reports it to a remote server instead of updating Netlify directly
 
 The server/client modes allow you to run a single centralized instance that holds the Netlify API token, while remote instances (clients) report their IP addresses to the server. Each client authenticates with a scoped API key that only allows updating specific domains. This avoids sharing your Netlify access token.
 
@@ -83,12 +83,26 @@ If you have [Updaemon](https://github.com/AdamTovatt/updaemon) installed, you ca
 > [!TIP]
 > You can have as many domains and subdomains you want in this list. As long as the variable name starts with "DOMAIN" it will be included in the list of domains to set.
 
+#### IP_SOURCE_INTERFACE (Optional)
+- **Default**: Not set, meaning the address is discovered from public IP services
+- **Description**: The name of a local network interface to read the published address from. Use this for a host whose useful address is private, such as one reachable over a VPN or only on a LAN.
+- **Example**: `IP_SOURCE_INTERFACE=tailscale0`
+
+The interface is named directly, so any name the operating system lists works: `wg0`, `eth0`, `tailscale0`, `end0`. Run `ip -brief address` on Linux, or `ifconfig` on macOS, to see the names and addresses on your host. If the interface has several IPv4 addresses, the first one the operating system lists is published.
+
+> [!IMPORTANT]
+> When this variable is set the public IP services are not used at all. If the configured interface cannot be read, because it does not exist, has no IPv4 address, or has only a self-assigned `169.254.x.x` address, nothing is published for that cycle and the error is logged. There is deliberately no fallback to the public IP: a fallback would publish the host's public address and then correct itself on a later cycle, leaving a name that resolves publicly part of the time while looking correct whenever it is checked.
+
+The startup log line names the source in use, so `AddressSource=network interface wg0` confirms the variable took effect.
+
 #### CHECK_INTERVAL (Optional)
 - **Default**: 1800 seconds (30 minutes)
 - **Description**: Interval in seconds between DNS checks and updates
 - **Example**: `CHECK_INTERVAL=300` (5 minutes)
 
 A smaller value can be configured to check for changes more often. For example, a value of `300` would mean every five minutes and would not be a problem for the cpu usage, memory nor the external apis used to check your public ip address.
+
+This interval is also how long the service waits after a failed check before trying again, so a smaller value is worth setting on a host whose address source can be unavailable for a while after boot, such as a VPN interface that takes time to come up.
 
 #### ENABLE_LOGGING (Optional)
 - **Default**: true
@@ -105,7 +119,7 @@ A smaller value can be configured to check for changes more often. For example, 
 
 ### Default Mode Variables (`PROXY_MODE=none` or not set)
 
-This is the original behavior. The service checks its own public IP and updates Netlify DNS directly.
+This is the original behavior. The service checks its own address and updates Netlify DNS directly.
 
 #### NETLIFY_ACCESS_TOKEN
 - **Required**: Yes
@@ -189,10 +203,13 @@ Environment=ENABLE_LOGGING=true
 
 ### Client Mode Variables (`PROXY_MODE=client`)
 
-Client mode does NOT talk to Netlify. Instead, it checks its own public IP and reports it to a remote server. The client only sends a request when its IP address actually changes.
+Client mode does NOT talk to Netlify. Instead, it checks its own address and reports it to a remote server. The client only sends a request when that address actually changes.
 
 > [!NOTE]
 > In client mode, no Netlify access token is needed. The server handles all communication with Netlify.
+
+> [!TIP]
+> If the useful address of this host is private, for example an address on a VPN, set `IP_SOURCE_INTERFACE` so the client reports that interface's address instead of its public IP.
 
 #### PROXY_SERVER_URL
 - **Required**: Yes
@@ -211,6 +228,7 @@ Environment=PROXY_MODE=client
 Environment=PROXY_SERVER_URL=https://yourdomain.com/dns-manager
 Environment=PROXY_API_KEY=a-long-random-api-key-given-to-you
 Environment=DOMAIN_01=yoursubdomain.yourdomain.com
+Environment=IP_SOURCE_INTERFACE=tailscale0
 Environment=CHECK_INTERVAL=300
 Environment=ENABLE_LOGGING=true
 ```
@@ -219,12 +237,14 @@ Environment=ENABLE_LOGGING=true
 
 ### IP Address Detection
 
-The service uses three external services for redundancy when detecting the public IP:
+By default the service uses three external services for redundancy when detecting the public IP:
 - `https://icanhazip.com`
 - `https://api.ipify.org`
 - `https://ipv4.seeip.org`
 
 All three are queried concurrently, and the first valid response is used.
+
+If `IP_SOURCE_INTERFACE` is set, the address is read from that local network interface instead and the external services are not used. The interface reader replaces the public IP services rather than being added to them, so a failed interface read means no DNS update for that cycle — see the [IP_SOURCE_INTERFACE](#ip_source_interface-optional) section for why there is no fallback.
 
 ### DNS Update Flow
 
@@ -238,8 +258,8 @@ When the IP address changes (or on first run):
 
 ### Client/Server Flow
 
-1. **Client** detects its public IP (same three-service approach)
-2. **Client** caches the last reported IP and only contacts the server when it changes
+1. **Client** detects its address (the public IP by default, or the address of the interface named by `IP_SOURCE_INTERFACE`)
+2. **Client** caches the last reported address and only contacts the server when it changes
 3. **Client** authenticates with the server using its API key and receives a JWT
 4. **Client** sends `POST /api/dns/update` with `{ "domain": "...", "ip": "..." }`
 5. **Server** validates the JWT, checks the requested domain is in the client's allowed list
@@ -269,18 +289,14 @@ The project includes both unit tests and integration tests.
 
 ### Unit Tests
 
-Unit tests cover the proxy mode functionality and can be run without any external services or credentials:
-
-- **ClientsConfiguration** — loading and querying the clients JSON config
-- **ClientAuthValidationService** — API key validation and JWT claim generation
-- **DnsUpdateService** — DNS record update logic (create, update, skip)
-- **DnsUpdateEndpointAuthorization** — domain authorization via JWT claims
-- **ClientWorkerIpCaching** — IP caching behavior (only report when changed)
+Unit tests cover the proxy mode functionality and the address sources, and can be run without any external services or credentials. Every test class that is not marked `[TestCategory(TestCategories.Integration)]` is a unit test, so a new test class is included here and in CI without any list to update.
 
 Run unit tests:
 ```bash
-dotnet test --filter "FullyQualifiedName~ClientsConfiguration|FullyQualifiedName~ClientAuthValidation|FullyQualifiedName~DnsUpdateService|FullyQualifiedName~DnsUpdateEndpointAuthorization|FullyQualifiedName~ClientWorkerIpCaching"
+dotnet test --filter "TestCategory!=Integration"
 ```
+
+Tests that call live external services are marked with `[TestCategory(TestCategories.Integration)]` and are excluded by that filter.
 
 ### Integration Tests
 
