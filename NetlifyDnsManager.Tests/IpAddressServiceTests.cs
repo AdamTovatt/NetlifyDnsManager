@@ -7,6 +7,7 @@ namespace NetlifyDnsManager.Tests
     /// Live integration tests for the IpAddressService using real external API.
     /// </summary>
     [TestClass]
+    [TestCategory(TestCategories.Integration)]
     public class IpAddressServiceTests
     {
         private IIpAddressService _ipAddressService = null!;

@@ -1,158 +1,139 @@
-using Microsoft.Extensions.Logging;
 using Moq;
 using NetlifyDnsManager.Models;
 using NetlifyDnsManager.Services;
-using EasyReasy.Auth.Client;
-using System.Net;
+using System.Text.Json;
 
 namespace NetlifyDnsManager.Tests
 {
     /// <summary>
-    /// Tests for the client worker's IP caching behavior using a testable wrapper.
-    /// Verifies that the client only reports to the server when the IP address changes.
+    /// Tests the client worker's IP caching behaviour against the real worker:
+    /// it only reports to the server when the address it reads has changed.
     /// </summary>
     [TestClass]
     public class ClientWorkerIpCachingTests
     {
-        private Mock<IIpAddressService> _ipServiceMock = null!;
+        private const int CheckIntervalSeconds = 1;
+
+        private static readonly TimeSpan WaitTimeout = TimeSpan.FromSeconds(20);
+
+        private int _addressReadCount;
+        private Mock<IIpAddressService> _ipAddressServiceMock = null!;
+        private RecordingHttpHandler _handler = null!;
 
         [TestInitialize]
         public void TestInitialize()
         {
-            _ipServiceMock = new Mock<IIpAddressService>();
+            _addressReadCount = 0;
+            _ipAddressServiceMock = new Mock<IIpAddressService>();
+            _handler = new RecordingHttpHandler();
         }
 
         [TestMethod]
-        public async Task IpCaching_WhenIpUnchanged_DoesNotReport()
+        public async Task IpCaching_WhenIpUnchanged_ReportsOnlyOnce()
         {
             // Arrange
-            string sameIp = "1.2.3.4";
-            _ipServiceMock.SetupSequence(s => s.GetIpAddressAsync())
-                .ReturnsAsync(sameIp)
-                .ReturnsAsync(sameIp);
+            SetUpAddresses("1.2.3.4", "1.2.3.4", "1.2.3.4");
 
-            string? lastReportedIp = null;
-            int reportCount = 0;
+            // Act - let three cycles read the same address
+            await RunCyclesAsync(3);
 
-            // Simulate two check cycles
-            for (int i = 0; i < 2; i++)
-            {
-                string currentIp = await _ipServiceMock.Object.GetIpAddressAsync();
-
-                if (currentIp != lastReportedIp)
-                {
-                    reportCount++;
-                    lastReportedIp = currentIp;
-                }
-            }
-
-            // Assert - should only report once (first time)
-            Assert.AreEqual(1, reportCount);
+            // Assert
+            Assert.AreEqual(1, _handler.UpdateRequests.Count, $"Sent: {string.Join(", ", _handler.UpdateRequests)}");
+            Assert.AreEqual("1.2.3.4", ReportedAddress(0));
         }
 
         [TestMethod]
-        public async Task IpCaching_WhenIpChanges_ReportsNewIp()
+        public async Task IpCaching_WhenIpChanges_ReportsTheNewAddress()
         {
             // Arrange
-            _ipServiceMock.SetupSequence(s => s.GetIpAddressAsync())
-                .ReturnsAsync("1.2.3.4")
-                .ReturnsAsync("5.6.7.8");
+            SetUpAddresses("1.2.3.4", "5.6.7.8");
 
-            string? lastReportedIp = null;
-            int reportCount = 0;
-            List<string> reportedIps = new List<string>();
+            // Act
+            await RunCyclesAsync(2);
 
-            // Simulate two check cycles
-            for (int i = 0; i < 2; i++)
-            {
-                string currentIp = await _ipServiceMock.Object.GetIpAddressAsync();
-
-                if (currentIp != lastReportedIp)
-                {
-                    reportCount++;
-                    reportedIps.Add(currentIp);
-                    lastReportedIp = currentIp;
-                }
-            }
-
-            // Assert - should report both times since IP changed
-            Assert.AreEqual(2, reportCount);
-            Assert.AreEqual("1.2.3.4", reportedIps[0]);
-            Assert.AreEqual("5.6.7.8", reportedIps[1]);
+            // Assert
+            Assert.AreEqual(2, _handler.UpdateRequests.Count, $"Sent: {string.Join(", ", _handler.UpdateRequests)}");
+            Assert.AreEqual("1.2.3.4", ReportedAddress(0));
+            Assert.AreEqual("5.6.7.8", ReportedAddress(1));
         }
 
         [TestMethod]
-        public async Task IpCaching_FirstCheckAlwaysReports()
+        public async Task IpCaching_FirstCycleAlwaysReports()
         {
             // Arrange
-            _ipServiceMock.Setup(s => s.GetIpAddressAsync()).ReturnsAsync("1.2.3.4");
+            SetUpAddresses("1.2.3.4");
 
-            string? lastReportedIp = null;
-            bool shouldReport = false;
+            // Act
+            await RunCyclesAsync(1);
 
-            // Simulate first check
-            string currentIp = await _ipServiceMock.Object.GetIpAddressAsync();
-            if (currentIp != lastReportedIp)
-            {
-                shouldReport = true;
-                lastReportedIp = currentIp;
-            }
-
-            // Assert - first check should always trigger a report
-            Assert.IsTrue(shouldReport);
+            // Assert
+            Assert.AreEqual(1, _handler.UpdateRequests.Count);
+            Assert.AreEqual("1.2.3.4", ReportedAddress(0));
         }
 
         [TestMethod]
         public async Task IpCaching_IpChangesBackAndForth_ReportsEachChange()
         {
             // Arrange
-            _ipServiceMock.SetupSequence(s => s.GetIpAddressAsync())
-                .ReturnsAsync("1.2.3.4")
-                .ReturnsAsync("5.6.7.8")
-                .ReturnsAsync("1.2.3.4"); // Changes back to original
+            SetUpAddresses("1.2.3.4", "5.6.7.8", "1.2.3.4");
 
-            string? lastReportedIp = null;
-            int reportCount = 0;
+            // Act
+            await RunCyclesAsync(3);
 
-            // Simulate three check cycles
-            for (int i = 0; i < 3; i++)
-            {
-                string currentIp = await _ipServiceMock.Object.GetIpAddressAsync();
-
-                if (currentIp != lastReportedIp)
-                {
-                    reportCount++;
-                    lastReportedIp = currentIp;
-                }
-            }
-
-            // Assert - should report all three times
-            Assert.AreEqual(3, reportCount);
+            // Assert
+            Assert.AreEqual(3, _handler.UpdateRequests.Count, $"Sent: {string.Join(", ", _handler.UpdateRequests)}");
+            Assert.AreEqual("1.2.3.4", ReportedAddress(0));
+            Assert.AreEqual("5.6.7.8", ReportedAddress(1));
+            Assert.AreEqual("1.2.3.4", ReportedAddress(2));
         }
 
         [TestMethod]
-        public async Task IpCaching_ManyConsecutiveSameIps_ReportsOnlyOnce()
+        public async Task IpCaching_WhenAReportFails_TheNextCycleReportsAgain()
         {
-            // Arrange
-            _ipServiceMock.Setup(s => s.GetIpAddressAsync()).ReturnsAsync("1.2.3.4");
+            // Arrange - the server rejects the first report, so the address was never accepted
+            SetUpAddresses("1.2.3.4", "1.2.3.4");
+            _handler.FailUpdateRequests = true;
 
-            string? lastReportedIp = null;
-            int reportCount = 0;
+            // Act
+            await RunCyclesAsync(2);
 
-            // Simulate 10 check cycles with the same IP
-            for (int i = 0; i < 10; i++)
-            {
-                string currentIp = await _ipServiceMock.Object.GetIpAddressAsync();
+            // Assert - an unchanged address is retried after a failure rather than assumed published
+            Assert.AreEqual(2, _handler.UpdateRequests.Count, $"Sent: {string.Join(", ", _handler.UpdateRequests)}");
+        }
 
-                if (currentIp != lastReportedIp)
-                {
-                    reportCount++;
-                    lastReportedIp = currentIp;
-                }
-            }
+        private void SetUpAddresses(params string[] addresses)
+        {
+            Queue<string> remainingAddresses = new Queue<string>(addresses);
+            string lastAddress = addresses[^1];
 
-            // Assert - should only report once
-            Assert.AreEqual(1, reportCount);
+            _ipAddressServiceMock.Setup(service => service.GetIpAddressAsync())
+                .Callback(() => Interlocked.Increment(ref _addressReadCount))
+                .ReturnsAsync(() => remainingAddresses.Count > 0 ? remainingAddresses.Dequeue() : lastAddress);
+        }
+
+        private async Task RunCyclesAsync(int cycleCount)
+        {
+            ClientWorker worker = ClientWorkerFactory.Create(_ipAddressServiceMock.Object, _handler, CheckIntervalSeconds);
+
+            await worker.StartAsync(CancellationToken.None);
+
+            bool allCyclesRan = await TestWait.UntilAsync(
+                () => Volatile.Read(ref _addressReadCount) >= cycleCount,
+                WaitTimeout);
+
+            await worker.StopAsync(CancellationToken.None);
+
+            Assert.IsTrue(allCyclesRan, $"Only {Volatile.Read(ref _addressReadCount)} of {cycleCount} cycles ran.");
+        }
+
+        private string ReportedAddress(int updateRequestIndex)
+        {
+            DnsUpdateRequest? reported = JsonSerializer.Deserialize<DnsUpdateRequest>(_handler.UpdateRequests[updateRequestIndex].Body);
+
+            Assert.IsNotNull(reported);
+            Assert.AreEqual(ClientWorkerFactory.Domain, reported!.Domain);
+
+            return reported.Ip;
         }
     }
 }

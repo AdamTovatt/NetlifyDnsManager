@@ -33,8 +33,8 @@ namespace NetlifyDnsManager
             if (configuration.EnableLogging)
             {
                 _logger.LogInformation("Started Netlify DNS Manager");
-                _logger.LogInformation("Configuration: CheckInterval={CheckInterval}s, Domains={Domains}",
-                    configuration.CheckIntervalSeconds, string.Join(", ", configuration.Domains));
+                _logger.LogInformation("Configuration: CheckInterval={CheckInterval}s, Domains={Domains}, AddressSource={AddressSource}",
+                    configuration.CheckIntervalSeconds, string.Join(", ", configuration.Domains), _ipAddressService.Description);
             }
 
             while (!stoppingToken.IsCancellationRequested)

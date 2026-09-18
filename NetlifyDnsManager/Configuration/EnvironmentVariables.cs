@@ -29,6 +29,13 @@ namespace NetlifyDnsManager.Configuration
         public static readonly VariableName CheckInterval = new VariableName("CHECK_INTERVAL");
 
         /// <summary>
+        /// The name of the local network interface to read the reported address from.
+        /// If set, the address is read from that interface instead of from public IP echo services.
+        /// </summary>
+        [EnvironmentVariableName]
+        public static readonly VariableName IpSourceInterface = new VariableName("IP_SOURCE_INTERFACE");
+
+        /// <summary>
         /// Whether to enable console logging.
         /// </summary>
         [EnvironmentVariableName]

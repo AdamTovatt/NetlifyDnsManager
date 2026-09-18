@@ -70,25 +70,46 @@ namespace NetlifyDnsManager.Services
         }
 
         /// <summary>
+        /// Gets the value of an optional environment variable.
+        /// </summary>
+        /// <param name="variable">The environment variable to read.</param>
+        /// <returns>The configured value, or null when the variable is not set or holds no value.</returns>
+        internal static string? GetOptionalValue(VariableName variable)
+        {
+            try
+            {
+                return variable.GetValue();
+            }
+            catch (InvalidOperationException)
+            {
+                // Nothing configured, which is what null means to every caller here
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Gets the proxy mode from environment variables.
         /// </summary>
         /// <returns>The proxy mode. Defaults to <see cref="ProxyMode.None"/> if not set or invalid.</returns>
         internal static ProxyMode GetProxyMode()
         {
-            try
+            string? modeValue = GetOptionalValue(EnvironmentVariables.ProxyMode);
+
+            if (modeValue != null && Enum.TryParse<ProxyMode>(modeValue, ignoreCase: true, out ProxyMode mode))
             {
-                string modeValue = EnvironmentVariables.ProxyMode.GetValue();
-                if (Enum.TryParse<ProxyMode>(modeValue, ignoreCase: true, out ProxyMode mode))
-                {
-                    return mode;
-                }
-            }
-            catch (Exception)
-            {
-                // Use default if not specified
+                return mode;
             }
 
             return ProxyMode.None;
+        }
+
+        /// <summary>
+        /// Gets the name of the network interface to read the reported address from.
+        /// </summary>
+        /// <returns>The configured interface name, or null if public IP echo services should be used instead.</returns>
+        internal static string? GetIpSourceInterfaceName()
+        {
+            return GetOptionalValue(EnvironmentVariables.IpSourceInterface);
         }
 
         /// <summary>
@@ -114,17 +135,11 @@ namespace NetlifyDnsManager.Services
         /// <returns>The API port number.</returns>
         internal static int GetApiPort()
         {
-            try
+            string? portValue = GetOptionalValue(EnvironmentVariables.ApiPort);
+
+            if (portValue != null && int.TryParse(portValue, out int port) && port >= 1 && port <= 65535)
             {
-                string portValue = EnvironmentVariables.ApiPort.GetValue();
-                if (int.TryParse(portValue, out int port) && port >= 1 && port <= 65535)
-                {
-                    return port;
-                }
-            }
-            catch (Exception)
-            {
-                // Use default if not specified or invalid
+                return port;
             }
 
             return DefaultApiPort;
@@ -136,17 +151,11 @@ namespace NetlifyDnsManager.Services
         /// <returns>The check interval in seconds.</returns>
         private static int GetCheckInterval()
         {
-            try
+            string? intervalValue = GetOptionalValue(EnvironmentVariables.CheckInterval);
+
+            if (intervalValue != null && int.TryParse(intervalValue, out int interval))
             {
-                string intervalValue = EnvironmentVariables.CheckInterval.GetValue();
-                if (int.TryParse(intervalValue, out int interval))
-                {
-                    return interval;
-                }
-            }
-            catch (Exception)
-            {
-                // Use default if not specified or invalid
+                return interval;
             }
 
             return 1800; // Default: 30 minutes
@@ -158,17 +167,11 @@ namespace NetlifyDnsManager.Services
         /// <returns>True if logging is enabled, false otherwise.</returns>
         private static bool GetEnableLogging()
         {
-            try
+            string? loggingValue = GetOptionalValue(EnvironmentVariables.EnableLogging);
+
+            if (loggingValue != null && bool.TryParse(loggingValue, out bool enableLogging))
             {
-                string loggingValue = EnvironmentVariables.EnableLogging.GetValue();
-                if (bool.TryParse(loggingValue, out bool enableLogging))
-                {
-                    return enableLogging;
-                }
-            }
-            catch (Exception)
-            {
-                // Use default if not specified or invalid
+                return enableLogging;
             }
 
             return true; // Default: enable logging

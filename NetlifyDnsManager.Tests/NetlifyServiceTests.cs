@@ -10,6 +10,7 @@ namespace NetlifyDnsManager.Tests
     /// Live integration tests for the NetlifyService using real Netlify API.
     /// </summary>
     [TestClass]
+    [TestCategory(TestCategories.Integration)]
     public class NetlifyServiceTests
     {
         private INetlifyService _netlifyService = null!;

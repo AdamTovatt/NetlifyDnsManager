@@ -6,9 +6,18 @@ namespace NetlifyDnsManager.Services
     public interface IIpAddressService
     {
         /// <summary>
-        /// Gets the current public IP address.
+        /// Gets a description of where this service reads the address from, for logging.
         /// </summary>
-        /// <returns>The public IP address as a string.</returns>
+        string Description { get; }
+
+        /// <summary>
+        /// Gets the IP address this host should publish.
+        /// </summary>
+        /// <returns>The IP address as a string.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when no address could be determined. Implementations must throw rather than return a
+        /// substitute address, and callers must then skip the update instead of publishing anything.
+        /// </exception>
         Task<string> GetIpAddressAsync();
     }
 }
