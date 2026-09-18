@@ -1,4 +1,4 @@
-namespace NetlifyDnsManager.Tests
+namespace NetlifyDnsManager.Tests.TestSupport
 {
     /// <summary>
     /// Categories used to select which tests to run.

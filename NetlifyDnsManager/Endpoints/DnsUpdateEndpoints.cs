@@ -32,12 +32,14 @@ namespace NetlifyDnsManager.Endpoints
         /// <param name="dnsUpdateService">The service updating DNS records.</param>
         /// <param name="httpContext">The HTTP context carrying the authenticated client.</param>
         /// <param name="loggerFactory">The logger factory.</param>
+        /// <param name="cancellationToken">Cancelled when the client goes away.</param>
         /// <returns>The result of the request.</returns>
         public static async Task<IResult> HandleDnsUpdateAsync(
             DnsUpdateRequest request,
             IDnsUpdateService dnsUpdateService,
             HttpContext httpContext,
-            ILoggerFactory loggerFactory)
+            ILoggerFactory loggerFactory,
+            CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(request.Domain))
                 return Results.BadRequest(new { error = "Domain is required." });
@@ -53,9 +55,9 @@ namespace NetlifyDnsManager.Endpoints
 
             ILogger logger = loggerFactory.CreateLogger(typeof(DnsUpdateEndpoints));
 
-            return await ClientRequest.RunAsync(logger, "update the DNS record", domain, async () =>
+            return await ClientRequest.RunAsync(logger, "update the DNS record", domain, cancellationToken, async () =>
             {
-                bool updated = await dnsUpdateService.UpdateDnsRecordAsync(domain, request.Ip);
+                bool updated = await dnsUpdateService.UpdateDnsRecordAsync(domain, request.Ip, cancellationToken: cancellationToken);
 
                 logger.LogInformation(
                     "Client {ClientName} reported {IpAddress} for {Domain} (updated: {Updated})",

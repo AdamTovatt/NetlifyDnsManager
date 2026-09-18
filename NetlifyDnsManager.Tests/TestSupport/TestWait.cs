@@ -1,4 +1,4 @@
-namespace NetlifyDnsManager.Tests
+namespace NetlifyDnsManager.Tests.TestSupport
 {
     /// <summary>
     /// Waits for a condition instead of for a fixed amount of time, so a passing test finishes

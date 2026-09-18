@@ -1,6 +1,4 @@
-using Moq;
 using NetlifyDnsManager.Models;
-using NetlifyDnsManager.Services;
 using System.Text.Json;
 
 namespace NetlifyDnsManager.Tests
@@ -20,18 +18,15 @@ namespace NetlifyDnsManager.Tests
         public async Task ClientWorker_WhenAddressSourceFails_SendsNothingAtAll()
         {
             // Arrange - the interface read failed, exactly as the interface reader reports it
-            int addressReadCount = 0;
-            Mock<IIpAddressService> ipAddressServiceMock = new Mock<IIpAddressService>();
-            ipAddressServiceMock.Setup(service => service.GetIpAddressAsync())
-                .Callback(() => Interlocked.Increment(ref addressReadCount))
-                .ThrowsAsync(new InvalidOperationException("Network interface 'wg0' has no IPv4 address assigned."));
+            CountingAddressSource addressSource = CountingAddressSource.Failing(
+                new InvalidOperationException("Network interface 'wg0' has no IPv4 address assigned."));
 
             RecordingHttpHandler handler = new RecordingHttpHandler();
-            ClientWorker worker = ClientWorkerFactory.Create(ipAddressServiceMock.Object, handler);
+            ClientWorker worker = ClientWorkerFactory.Create(addressSource, handler);
 
             // Act - wait for the cycle to read the address, then see what it sent
             await worker.StartAsync(CancellationToken.None);
-            bool cycleRan = await TestWait.UntilAsync(() => Volatile.Read(ref addressReadCount) > 0, WaitTimeout);
+            bool cycleRan = await addressSource.WaitForReadsAsync(1, WaitTimeout);
             await worker.StopAsync(CancellationToken.None);
 
             // Assert - the cycle ran, and it sent nothing: no update, and not even an authentication attempt
@@ -43,11 +38,10 @@ namespace NetlifyDnsManager.Tests
         public async Task ClientWorker_WhenAddressIsAvailable_ReportsThatAddress()
         {
             // Arrange - the same harness with a working source, to prove the absence above is meaningful
-            Mock<IIpAddressService> ipAddressServiceMock = new Mock<IIpAddressService>();
-            ipAddressServiceMock.Setup(service => service.GetIpAddressAsync()).ReturnsAsync(InterfaceAddress);
+            CountingAddressSource addressSource = CountingAddressSource.Returning(InterfaceAddress);
 
             RecordingHttpHandler handler = new RecordingHttpHandler();
-            ClientWorker worker = ClientWorkerFactory.Create(ipAddressServiceMock.Object, handler);
+            ClientWorker worker = ClientWorkerFactory.Create(addressSource, handler);
 
             // Act
             await worker.StartAsync(CancellationToken.None);

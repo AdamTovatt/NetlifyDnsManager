@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using System.Text.Json;
 
-namespace NetlifyDnsManager.Tests
+namespace NetlifyDnsManager.Tests.TestSupport
 {
     /// <summary>
     /// What a client receives from an endpoint: the status code and the body, so a test can check

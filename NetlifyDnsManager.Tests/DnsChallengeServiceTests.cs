@@ -147,7 +147,7 @@ namespace NetlifyDnsManager.Tests
 
             // Act & Assert
             await Assert.ThrowsExceptionAsync<ArgumentException>(
-                () => _service.SetChallengeRecordAsync(Domain, new string('a', AcmeChallenge.MaxValueLength + 1)));
+                () => _service.SetChallengeRecordAsync(Domain, new string('a', AcmeChallenge.MaxValueBytes + 1)));
 
             VerifyNoRecordAdded();
         }
@@ -157,7 +157,7 @@ namespace NetlifyDnsManager.Tests
         {
             // Arrange - the boundary belongs to the accepted side
             SetUpZone();
-            string longestAllowedValue = new string('a', AcmeChallenge.MaxValueLength);
+            string longestAllowedValue = new string('a', AcmeChallenge.MaxValueBytes);
 
             // Act
             ChallengeSetResult result = await _service.SetChallengeRecordAsync(Domain, longestAllowedValue);
@@ -394,7 +394,7 @@ namespace NetlifyDnsManager.Tests
         public async Task SetChallengeRecordAsync_ConcurrentCallsForOneName_DoNotBothWriteTheSameValue()
         {
             // Arrange
-            HeldZone zone = new HeldZone(_netlifyServiceMock, Domain, ChallengeRecordName, ChallengeValue);
+            HeldZone zone = new HeldZone(_netlifyServiceMock, Domain, ChallengeRecordName, AcmeChallenge.RecordType, ChallengeValue, AcmeChallenge.RecordTtl);
 
             // Act - both calls publish the same value, the second while the first is still reading
             Task<ChallengeSetResult> firstCall = _service.SetChallengeRecordAsync(Domain, ChallengeValue);
@@ -414,7 +414,7 @@ namespace NetlifyDnsManager.Tests
         public async Task SetChallengeRecordAsync_ConcurrentCallsNamingTheDomainInDifferentCases_AreStillSerialized()
         {
             // Arrange - the same record, spelled two ways, must not be written twice
-            HeldZone zone = new HeldZone(_netlifyServiceMock, Domain, ChallengeRecordName, ChallengeValue);
+            HeldZone zone = new HeldZone(_netlifyServiceMock, Domain, ChallengeRecordName, AcmeChallenge.RecordType, ChallengeValue, AcmeChallenge.RecordTtl);
 
             _netlifyServiceMock.Setup(service => service.GetAllDnsRecordsAsync(Domain.ToUpperInvariant(), It.IsAny<CancellationToken>()))
                 .Returns(() => zone.ReadAsync());
@@ -430,6 +430,34 @@ namespace NetlifyDnsManager.Tests
             // Assert
             Assert.AreEqual(1, results.Count(result => result == ChallengeSetResult.Created));
             VerifyAddedOnce();
+        }
+
+        [TestMethod]
+        public async Task SetChallengeRecordAsync_WhenACallerWaitingForTheNameIsCancelled_GivesUpItsPlaceInTheQueue()
+        {
+            // Arrange - the first call holds the record name while the second one queues behind it
+            HeldZone zone = new HeldZone(_netlifyServiceMock, Domain, ChallengeRecordName, AcmeChallenge.RecordType, ChallengeValue, AcmeChallenge.RecordTtl);
+            using CancellationTokenSource secondCallAborted = new CancellationTokenSource();
+
+            Task<ChallengeSetResult> firstCall = _service.SetChallengeRecordAsync(Domain, ChallengeValue);
+            await zone.FirstReadStarted;
+
+            // Act - the second caller goes away while it is still waiting for the name
+            Task<ChallengeSetResult> secondCall = _service.SetChallengeRecordAsync(Domain, OtherChallengeValue, secondCallAborted.Token);
+            secondCallAborted.Cancel();
+
+            zone.ReleaseFirstRead();
+            await firstCall;
+
+            // Assert - it did not go on to write once the name came free
+            try
+            {
+                await secondCall;
+                Assert.Fail("The cancelled caller still took its turn and wrote its value.");
+            }
+            catch (OperationCanceledException)
+            {
+            }
         }
 
         private static NetlifyDnsRecord Challenge(string value)
@@ -487,68 +515,6 @@ namespace NetlifyDnsManager.Tests
             _netlifyServiceMock.Verify(
                 service => service.DeleteDnsRecordAsync(It.IsAny<NetlifyDnsRecord>(), It.IsAny<CancellationToken>()),
                 Times.Never);
-        }
-
-        /// <summary>
-        /// A zone whose first read is held open, so a second call can be made to arrive in the middle
-        /// of the first one. The zone is read as it is when the call starts, so a call that is not made
-        /// to wait for the one before it sees a zone without that call's record.
-        /// </summary>
-        private sealed class HeldZone
-        {
-            private readonly TaskCompletionSource _firstReadStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            private readonly TaskCompletionSource _releaseFirstRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            private readonly List<NetlifyDnsRecord> _records = new List<NetlifyDnsRecord>();
-            private readonly string _recordName;
-            private readonly string _value;
-            private int _readCount;
-
-            public HeldZone(Mock<INetlifyService> netlifyServiceMock, string domain, string recordName, string value)
-            {
-                _recordName = recordName;
-                _value = value;
-
-                netlifyServiceMock.Setup(service => service.GetAllDnsRecordsAsync(domain, It.IsAny<CancellationToken>()))
-                    .Returns(() => ReadAsync());
-
-                netlifyServiceMock.Setup(service => service.AddDnsRecordAsync(
-                        recordName, It.IsAny<string>(), "TXT", value, AcmeChallenge.RecordTtl, It.IsAny<CancellationToken>()))
-                    .ReturnsAsync(Add);
-            }
-
-            public Task FirstReadStarted => _firstReadStarted.Task;
-
-            public void ReleaseFirstRead() => _releaseFirstRead.TrySetResult();
-
-            public async Task<NetlifyDnsRecords> ReadAsync()
-            {
-                List<NetlifyDnsRecord> zoneAtReadTime;
-
-                lock (_records)
-                {
-                    zoneAtReadTime = _records.ToList();
-                }
-
-                if (Interlocked.Increment(ref _readCount) == 1)
-                {
-                    _firstReadStarted.TrySetResult();
-                    await _releaseFirstRead.Task;
-                }
-
-                return new NetlifyDnsRecords(zoneAtReadTime);
-            }
-
-            private NetlifyDnsRecord Add()
-            {
-                NetlifyDnsRecord added = DnsRecordFactory.Create(_recordName, "TXT", _value, AcmeChallenge.RecordTtl);
-
-                lock (_records)
-                {
-                    _records.Add(added);
-                }
-
-                return added;
-            }
         }
     }
 }

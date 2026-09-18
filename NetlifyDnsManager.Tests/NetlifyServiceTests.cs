@@ -85,6 +85,36 @@ namespace NetlifyDnsManager.Tests
         }
 
         [TestMethod]
+        public async Task AddDnsRecordAsync_PublishesATxtValueThatCanBeReadBack()
+        {
+            // The one thing about TXT records that cannot be settled offline: whether a value comes
+            // back as it was published or wrapped in quotes. Finding a published challenge value again
+            // is what removing it depends on, and it is read through the method used here, so this
+            // test failing means a cleanup would report success having removed nothing
+            string testHostname = $"{AcmeChallenge.RecordLabel}.txt-roundtrip.{_testDomain}";
+            string publishedValue = "txt-roundtrip-value-written-by-the-test-suite";
+
+            NetlifyDnsRecord created = await _netlifyService.AddDnsRecordAsync(
+                testHostname, _testDomain, AcmeChallenge.RecordType, publishedValue, AcmeChallenge.RecordTtl);
+
+            try
+            {
+                // Act - read it back out of the zone rather than trusting what the write answered
+                NetlifyDnsRecords allRecords = await _netlifyService.GetAllDnsRecordsAsync(_testDomain);
+                NetlifyDnsRecord? readBack = allRecords.Records.FirstOrDefault(record => record.Id == created.Id);
+
+                // Assert
+                Assert.IsNotNull(readBack, "The TXT record that was just published is not in the zone.");
+                Console.WriteLine($"TXT value as the API returned it: {readBack!.Value}");
+                Assert.AreEqual(publishedValue, readBack.ReadTextValue(), $"The value came back as {readBack.Value}");
+            }
+            finally
+            {
+                await _netlifyService.DeleteDnsRecordAsync(created);
+            }
+        }
+
+        [TestMethod]
         public async Task DeleteDnsRecordAsync_WithValidRecord_DeletesDnsRecord()
         {
             // Arrange - first create a record to delete

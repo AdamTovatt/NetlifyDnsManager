@@ -36,12 +36,12 @@ namespace NetlifyDnsManager.Services
             if (string.IsNullOrWhiteSpace(value))
                 throw new ArgumentException("Challenge value cannot be null or empty.", nameof(value));
 
-            if (value.Length > AcmeChallenge.MaxValueLength)
-                throw new ArgumentException($"Challenge value cannot be longer than {AcmeChallenge.MaxValueLength} characters.", nameof(value));
+            if (AcmeChallenge.IsValueTooLong(value))
+                throw new ArgumentException($"Challenge value cannot be longer than {AcmeChallenge.MaxValueBytes} bytes.", nameof(value));
 
             string recordName = AcmeChallenge.RecordNameFor(domain);
 
-            return _recordLocks.RunAsync(recordName, () => SetChallengeRecordInternalAsync(domain, recordName, value, cancellationToken));
+            return _recordLocks.RunAsync(recordName, cancellationToken, () => SetChallengeRecordInternalAsync(domain, recordName, value, cancellationToken));
         }
 
         /// <summary>
@@ -55,7 +55,7 @@ namespace NetlifyDnsManager.Services
         {
             string recordName = AcmeChallenge.RecordNameFor(domain);
 
-            return _recordLocks.RunAsync(recordName, () => DeleteChallengeRecordsInternalAsync(domain, recordName, value, cancellationToken));
+            return _recordLocks.RunAsync(recordName, cancellationToken, () => DeleteChallengeRecordsInternalAsync(domain, recordName, value, cancellationToken));
         }
 
         private async Task<ChallengeSetResult> SetChallengeRecordInternalAsync(string domain, string recordName, string value, CancellationToken cancellationToken)
@@ -63,7 +63,7 @@ namespace NetlifyDnsManager.Services
             NetlifyDnsRecords allRecords = await _netlifyService.GetAllDnsRecordsAsync(domain, cancellationToken);
             List<NetlifyDnsRecord> publishedRecords = FindChallengeRecords(allRecords, recordName, value: null);
 
-            if (publishedRecords.Any(record => AcmeChallenge.ReadValue(record.Value) == value))
+            if (publishedRecords.Any(record => record.ReadTextValue() == value))
             {
                 _logger.LogInformation("Challenge record {RecordName} already publishes this value", recordName);
 
@@ -117,7 +117,7 @@ namespace NetlifyDnsManager.Services
             return allRecords.Records
                 .Where(record => record.Type == AcmeChallenge.RecordType
                     && string.Equals(record.Hostname, recordName, StringComparison.OrdinalIgnoreCase)
-                    && (value == null || AcmeChallenge.ReadValue(record.Value) == value))
+                    && (value == null || record.ReadTextValue() == value))
                 .ToList();
         }
     }

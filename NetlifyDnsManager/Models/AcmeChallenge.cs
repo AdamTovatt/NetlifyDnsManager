@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace NetlifyDnsManager.Models
 {
     /// <summary>
@@ -24,9 +26,10 @@ namespace NetlifyDnsManager.Models
         public const long RecordTtl = 60;
 
         /// <summary>
-        /// The longest a single DNS TXT string can be.
+        /// The longest a single DNS TXT string can be, counted the way DNS counts it: in bytes, because
+        /// the string is stored behind a single length byte.
         /// </summary>
-        public const int MaxValueLength = 255;
+        public const int MaxValueBytes = 255;
 
         /// <summary>
         /// The most values one challenge record name may hold. A certificate covering a name and its
@@ -49,20 +52,15 @@ namespace NetlifyDnsManager.Models
         }
 
         /// <summary>
-        /// Reads a TXT record value as the string it publishes, without the quoting a DNS provider
-        /// may add around it. Comparing raw values would silently match nothing if the value came
-        /// back quoted, which would leave a challenge record behind while reporting success.
+        /// Whether a challenge value is too long to publish as one TXT string. The measurement is in
+        /// UTF-8 bytes rather than characters, because that is the limit DNS imposes and a character
+        /// can encode to as many as four of them.
         /// </summary>
-        /// <param name="recordValue">The value as the provider returned it.</param>
-        /// <returns>The published string.</returns>
-        public static string ReadValue(string recordValue)
+        /// <param name="value">The challenge value.</param>
+        /// <returns>True when the value does not fit in one TXT string.</returns>
+        public static bool IsValueTooLong(string value)
         {
-            if (recordValue.Length >= 2 && recordValue.StartsWith('"') && recordValue.EndsWith('"'))
-            {
-                return recordValue.Substring(1, recordValue.Length - 2);
-            }
-
-            return recordValue;
+            return Encoding.UTF8.GetByteCount(value) > MaxValueBytes;
         }
     }
 }

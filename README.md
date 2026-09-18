@@ -88,12 +88,12 @@ If you have [Updaemon](https://github.com/AdamTovatt/updaemon) installed, you ca
 - **Description**: The name of a local network interface to read the published address from. Use this for a host whose useful address is private, such as one reachable over a VPN or only on a LAN.
 - **Example**: `IP_SOURCE_INTERFACE=tailscale0`
 
-The interface is named directly, so any name the operating system lists works: `wg0`, `eth0`, `tailscale0`, `end0`. Run `ip -brief address` on Linux, or `ifconfig` on macOS, to see the names and addresses on your host. If the interface has several IPv4 addresses, the first one the operating system lists is published.
+The interface is named directly, so any name the operating system lists works: `wg0`, `eth0`, `tailscale0`, `end0`. Run `ip -brief address` on Linux, or `ifconfig` on macOS, to see the names and addresses on your host. If the interface has several IPv4 addresses, the first usable one the operating system lists is published: a self-assigned `169.254.x.x` address is passed over, because it means the interface never finished configuring.
 
 > [!IMPORTANT]
 > When this variable is set the public IP services are not used at all. If the configured interface cannot be read, because it does not exist, has no IPv4 address, or has only a self-assigned `169.254.x.x` address, nothing is published for that cycle and the error is logged. There is deliberately no fallback to the public IP: a fallback would publish the host's public address and then correct itself on a later cycle, leaving a name that resolves publicly part of the time while looking correct whenever it is checked.
 
-The startup log line names the source in use, so `AddressSource=network interface wg0` confirms the variable took effect.
+The startup log line names the source in use, so `AddressSource=network interface wg0` confirms the variable took effect. It is written at startup only, and only with `ENABLE_LOGGING` left on, so turn logging back on for the run where you check this.
 
 #### CHECK_INTERVAL (Optional)
 - **Default**: 1800 seconds (30 minutes)
@@ -284,13 +284,13 @@ curl -s -X POST https://yourdomain.com/dns-manager/api/dns/challenge \
   -d '{"domain":"yoursubdomain.yourdomain.com","value":"the-value-from-your-acme-client"}'
 ```
 
-Both calls answer with the record the server acted on:
+The publish call answers with the record the server wrote:
 
 ```json
 { "domain": "yoursubdomain.yourdomain.com", "recordName": "_acme-challenge.yoursubdomain.yourdomain.com", "created": true }
 ```
 
-`recordName` is the name the value was actually published at, and `created` is false when that value was already there. `POST /api/dns/update` answers in the same shape, with `updated` in place of `created`.
+`recordName` is the name the value was actually published at, and `created` is false when that value was already there.
 
 **Remove it again after validation**
 
@@ -299,7 +299,13 @@ curl -s -X DELETE "https://yourdomain.com/dns-manager/api/dns/challenge?domain=y
   -H "Authorization: Bearer $TOKEN"
 ```
 
-The response reports `deleted`, the number of records removed. Add `&value=$CERTBOT_VALIDATION` to remove one value instead of every value at that name.
+The answer names the record it acted on and how many values it removed:
+
+```json
+{ "domain": "yoursubdomain.yourdomain.com", "recordName": "_acme-challenge.yoursubdomain.yourdomain.com", "deleted": 1 }
+```
+
+Add `&value=$CERTBOT_VALIDATION` to remove one value instead of every value at that name. Send the parameter only when it has a value: `?value=` with nothing after it is refused with 400 rather than treated as every value, so that a hook whose variable is unset fails visibly instead of reporting a cleanup that removed nothing.
 
 With certbot, the first call belongs in `--manual-auth-hook` using `$CERTBOT_DOMAIN` and `$CERTBOT_VALIDATION`, and the second in `--manual-cleanup-hook`, which needs only `$CERTBOT_DOMAIN` unless you scope the removal to one value.
 
@@ -313,7 +319,7 @@ A few properties worth knowing:
 - **A name holds at most four values.** Beyond that the request is refused with 409 Conflict rather than growing the record set further, because reaching four means earlier challenges were never cleaned up. Remove them and publish again.
 - **Removal takes away only challenge records.** `DELETE` removes the TXT records at `_acme-challenge.<domain>`, leaving the domain's own records, and any `_acme-challenge` delegation record, untouched. A failure to remove them is reported as 500 rather than as a successful cleanup; a `deleted` count of 0 means there was nothing published to remove, which is also what a value-scoped removal reports when that value is not there.
 - **The periodic A record update ignores them.** The record it manages is the `A` record at the domain itself, so a challenge published during a renewal is not disturbed.
-- **Value limits.** A challenge value must be at most 255 characters, the longest a single DNS TXT string can be; a longer one is refused with 400.
+- **Value limits.** A challenge value must be at most 255 bytes, the longest a single DNS TXT string can be; a longer one is refused with 400. An ACME value is base64url, so this is a limit nothing a certificate client sends comes near.
 
 ## Configuration
 

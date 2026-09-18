@@ -3,8 +3,8 @@ using NetlifyDnsManager.Models;
 namespace NetlifyDnsManager.Tests
 {
     /// <summary>
-    /// Tests the rules of an ACME DNS-01 challenge record: the name it sits at, and how a value
-    /// published in a zone reads back.
+    /// Tests the rules of an ACME DNS-01 challenge record: the name it sits at, and how much a single
+    /// record may carry.
     /// </summary>
     [TestClass]
     public class AcmeChallengeTests
@@ -33,30 +33,33 @@ namespace NetlifyDnsManager.Tests
         }
 
         [TestMethod]
-        public void ReadValue_WithAPlainValue_ReturnsItUnchanged()
+        public void MaxValueBytes_IsTheLongestASingleTxtStringCanBe()
         {
-            Assert.AreEqual("a-challenge-value", AcmeChallenge.ReadValue("a-challenge-value"));
+            Assert.AreEqual(255, AcmeChallenge.MaxValueBytes);
         }
 
         [TestMethod]
-        public void ReadValue_WithAQuotedValue_ReturnsWhatItPublishes()
+        public void IsValueTooLong_AtTheLimit_IsFalse()
         {
-            // A zone may hand a TXT value back in the quotes its zone file uses
-            Assert.AreEqual("a-challenge-value", AcmeChallenge.ReadValue("\"a-challenge-value\""));
+            // A value of exactly the limit still fits in one TXT string
+            Assert.IsFalse(AcmeChallenge.IsValueTooLong(new string('a', AcmeChallenge.MaxValueBytes)));
         }
 
         [TestMethod]
-        public void ReadValue_WithQuotesInsideTheValue_KeepsThem()
+        public void IsValueTooLong_OneCharacterOverTheLimit_IsTrue()
         {
-            // Only quoting around the whole value is quoting; anything else is the value itself
-            Assert.AreEqual("a-\"quoted\"-part", AcmeChallenge.ReadValue("a-\"quoted\"-part"));
-            Assert.AreEqual("\"", AcmeChallenge.ReadValue("\""));
+            Assert.IsTrue(AcmeChallenge.IsValueTooLong(new string('a', AcmeChallenge.MaxValueBytes + 1)));
         }
 
         [TestMethod]
-        public void MaxValueLength_IsTheLongestASingleTxtStringCanBe()
+        public void IsValueTooLong_MeasuresBytesRatherThanCharacters()
         {
-            Assert.AreEqual(255, AcmeChallenge.MaxValueLength);
+            // 200 characters, each two bytes: a character count would let this through at 400 bytes,
+            // and the record would then be refused by DNS rather than by us
+            string twoByteCharacters = new string('ä', 200);
+
+            Assert.IsTrue(twoByteCharacters.Length <= AcmeChallenge.MaxValueBytes, "The value has to be short in characters for this to test anything.");
+            Assert.IsTrue(AcmeChallenge.IsValueTooLong(twoByteCharacters));
         }
 
         [TestMethod]

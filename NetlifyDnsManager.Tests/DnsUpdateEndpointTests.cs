@@ -31,8 +31,7 @@ namespace NetlifyDnsManager.Tests
         public async Task DnsUpdate_ForAnAuthorizedDomain_UpdatesTheRecordAndReportsIt()
         {
             // Arrange
-            _dnsUpdateServiceMock.Setup(service => service.UpdateDnsRecordAsync(AuthorizedDomain, IpAddress, It.IsAny<bool>()))
-                .ReturnsAsync(true);
+            SetUpUpdate(AuthorizedDomain, updated: true);
 
             // Act
             EndpointResponse response = await ExecuteUpdateAsync(AuthorizedDomain, IpAddress);
@@ -44,7 +43,7 @@ namespace NetlifyDnsManager.Tests
             Assert.AreEqual("true", response.Field("updated"));
 
             _dnsUpdateServiceMock.Verify(
-                service => service.UpdateDnsRecordAsync(AuthorizedDomain, IpAddress, It.IsAny<bool>()),
+                service => service.UpdateDnsRecordAsync(AuthorizedDomain, IpAddress, It.IsAny<bool>(), It.IsAny<CancellationToken>()),
                 Times.Once);
         }
 
@@ -52,8 +51,7 @@ namespace NetlifyDnsManager.Tests
         public async Task DnsUpdate_WhenTheRecordWasAlreadyCurrent_ReportsThatNothingChanged()
         {
             // Arrange
-            _dnsUpdateServiceMock.Setup(service => service.UpdateDnsRecordAsync(AuthorizedDomain, IpAddress, It.IsAny<bool>()))
-                .ReturnsAsync(false);
+            SetUpUpdate(AuthorizedDomain, updated: false);
 
             // Act
             EndpointResponse response = await ExecuteUpdateAsync(AuthorizedDomain, IpAddress);
@@ -67,7 +65,8 @@ namespace NetlifyDnsManager.Tests
         public async Task DnsUpdate_WithTheDomainInAnotherCase_UsesTheAuthorizedSpelling()
         {
             // Arrange - the record lookup and the per-domain lock should see one form of the name
-            _dnsUpdateServiceMock.Setup(service => service.UpdateDnsRecordAsync(It.IsAny<string>(), IpAddress, It.IsAny<bool>()))
+            _dnsUpdateServiceMock
+                .Setup(service => service.UpdateDnsRecordAsync(It.IsAny<string>(), IpAddress, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(true);
 
             // Act
@@ -78,7 +77,7 @@ namespace NetlifyDnsManager.Tests
             Assert.AreEqual(AuthorizedDomain, response.Field("domain"));
 
             _dnsUpdateServiceMock.Verify(
-                service => service.UpdateDnsRecordAsync(AuthorizedDomain, IpAddress, It.IsAny<bool>()),
+                service => service.UpdateDnsRecordAsync(AuthorizedDomain, IpAddress, It.IsAny<bool>(), It.IsAny<CancellationToken>()),
                 Times.Once);
         }
 
@@ -90,6 +89,7 @@ namespace NetlifyDnsManager.Tests
 
             // Assert
             Assert.AreEqual(StatusCodes.Status403Forbidden, response.StatusCode);
+            Assert.AreEqual($"Not authorized for domain: {OtherClientsDomain}", response.Field("error"));
             VerifyNothingUpdated();
         }
 
@@ -130,7 +130,8 @@ namespace NetlifyDnsManager.Tests
         public async Task DnsUpdate_WhenTheDnsLayerFails_ReportsAServerErrorWithoutTheReason()
         {
             // Arrange
-            _dnsUpdateServiceMock.Setup(service => service.UpdateDnsRecordAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()))
+            _dnsUpdateServiceMock
+                .Setup(service => service.UpdateDnsRecordAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new HttpRequestException("Response status code does not indicate success: 401 (Unauthorized)"));
 
             // Act
@@ -142,11 +143,30 @@ namespace NetlifyDnsManager.Tests
         }
 
         [TestMethod]
+        public async Task DnsUpdate_PassesTheRequestsCancellationTokenOn()
+        {
+            // Arrange - the client that reported an address may hang up while the zone is being written
+            using CancellationTokenSource requestAborted = new CancellationTokenSource();
+
+            _dnsUpdateServiceMock
+                .Setup(service => service.UpdateDnsRecordAsync(AuthorizedDomain, IpAddress, It.IsAny<bool>(), requestAborted.Token))
+                .ReturnsAsync(true);
+
+            // Act
+            EndpointResponse response = await ExecuteUpdateAsync(AuthorizedDomain, IpAddress, requestAborted.Token);
+
+            // Assert
+            Assert.AreEqual(StatusCodes.Status200OK, response.StatusCode);
+            _dnsUpdateServiceMock.Verify(
+                service => service.UpdateDnsRecordAsync(AuthorizedDomain, IpAddress, It.IsAny<bool>(), requestAborted.Token),
+                Times.Once);
+        }
+
+        [TestMethod]
         public async Task DnsUpdate_LogsTheClientThatReported()
         {
             // Arrange
-            _dnsUpdateServiceMock.Setup(service => service.UpdateDnsRecordAsync(AuthorizedDomain, IpAddress, It.IsAny<bool>()))
-                .ReturnsAsync(true);
+            SetUpUpdate(AuthorizedDomain, updated: true);
 
             // Act
             await ExecuteUpdateAsync(AuthorizedDomain, IpAddress);
@@ -161,8 +181,7 @@ namespace NetlifyDnsManager.Tests
         public async Task DnsUpdate_LogsUnderTheEndpointsFullTypeName()
         {
             // Arrange
-            _dnsUpdateServiceMock.Setup(service => service.UpdateDnsRecordAsync(AuthorizedDomain, IpAddress, It.IsAny<bool>()))
-                .ReturnsAsync(true);
+            SetUpUpdate(AuthorizedDomain, updated: true);
 
             // Act
             await ExecuteUpdateAsync(AuthorizedDomain, IpAddress);
@@ -171,7 +190,14 @@ namespace NetlifyDnsManager.Tests
             CollectionAssert.Contains(_loggerFactory.Categories.ToList(), typeof(DnsUpdateEndpoints).FullName);
         }
 
-        private async Task<EndpointResponse> ExecuteUpdateAsync(string? requestedDomain, string? ipAddress)
+        private void SetUpUpdate(string domain, bool updated)
+        {
+            _dnsUpdateServiceMock
+                .Setup(service => service.UpdateDnsRecordAsync(domain, IpAddress, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(updated);
+        }
+
+        private async Task<EndpointResponse> ExecuteUpdateAsync(string? requestedDomain, string? ipAddress, CancellationToken cancellationToken = default)
         {
             DnsUpdateRequest request = new DnsUpdateRequest
             {
@@ -185,7 +211,8 @@ namespace NetlifyDnsManager.Tests
                 request,
                 _dnsUpdateServiceMock.Object,
                 httpContext,
-                _loggerFactory);
+                _loggerFactory,
+                cancellationToken);
 
             return await EndpointResponse.ReadAsync(result, httpContext);
         }
@@ -193,7 +220,8 @@ namespace NetlifyDnsManager.Tests
         private void VerifyNothingUpdated()
         {
             _dnsUpdateServiceMock.Verify(
-                service => service.UpdateDnsRecordAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()),
+                service => service.UpdateDnsRecordAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
                 Times.Never);
         }
     }

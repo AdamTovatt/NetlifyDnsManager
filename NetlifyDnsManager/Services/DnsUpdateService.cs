@@ -31,15 +31,16 @@ namespace NetlifyDnsManager.Services
         /// <param name="domain">The domain to update.</param>
         /// <param name="ipAddress">The IP address to set.</param>
         /// <param name="enableLogging">Whether to log informational messages.</param>
+        /// <param name="cancellationToken">Optional cancellation token to cancel the operation.</param>
         /// <returns>True if the record was updated, false if it was already current.</returns>
-        public Task<bool> UpdateDnsRecordAsync(string domain, string ipAddress, bool enableLogging = true)
+        public Task<bool> UpdateDnsRecordAsync(string domain, string ipAddress, bool enableLogging = true, CancellationToken cancellationToken = default)
         {
-            return _domainLocks.RunAsync(domain, () => UpdateDnsRecordInternalAsync(domain, ipAddress, enableLogging));
+            return _domainLocks.RunAsync(domain, cancellationToken, () => UpdateDnsRecordInternalAsync(domain, ipAddress, enableLogging, cancellationToken));
         }
 
-        private async Task<bool> UpdateDnsRecordInternalAsync(string domain, string ipAddress, bool enableLogging)
+        private async Task<bool> UpdateDnsRecordInternalAsync(string domain, string ipAddress, bool enableLogging, CancellationToken cancellationToken)
         {
-            NetlifyDnsRecords allRecords = await _netlifyService.GetAllDnsRecordsAsync(domain);
+            NetlifyDnsRecords allRecords = await _netlifyService.GetAllDnsRecordsAsync(domain, cancellationToken);
 
             // Host names are matched without regard to case, because DNS names are case insensitive:
             // matching them exactly would add a second A record instead of replacing the first
@@ -64,7 +65,7 @@ namespace NetlifyDnsManager.Services
                         domain, existingRecord.Value, ipAddress);
                 }
 
-                await _netlifyService.DeleteDnsRecordAsync(existingRecord);
+                await _netlifyService.DeleteDnsRecordAsync(existingRecord, cancellationToken);
             }
             else
             {
@@ -74,7 +75,7 @@ namespace NetlifyDnsManager.Services
                 }
             }
 
-            await _netlifyService.AddDnsRecordAsync(domain, domain, "A", ipAddress, 1800);
+            await _netlifyService.AddDnsRecordAsync(domain, domain, "A", ipAddress, 1800, cancellationToken);
 
             if (enableLogging)
             {

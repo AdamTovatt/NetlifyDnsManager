@@ -70,6 +70,9 @@ namespace NetlifyDnsManager
 
                 try
                 {
+                    // No stopping token: a cycle's work runs to its end and the loop above stops after
+                    // it. Handing it the token would abandon a half-finished cycle into the catch below,
+                    // which would record an ordinary shutdown as a failure to update DNS
                     await _dnsUpdateService.UpdateDnsRecordAsync(domain, currentIpAddress, configuration.EnableLogging);
                 }
                 catch (Exception ex)

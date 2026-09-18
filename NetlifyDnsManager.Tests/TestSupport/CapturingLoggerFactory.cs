@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace NetlifyDnsManager.Tests
+namespace NetlifyDnsManager.Tests.TestSupport
 {
     /// <summary>
     /// Records what an endpoint logged, and under which category, so that a test can check what an
@@ -9,7 +9,7 @@ namespace NetlifyDnsManager.Tests
     internal sealed class CapturingLoggerFactory : ILoggerFactory
     {
         private readonly List<string> _categories = new List<string>();
-        private readonly List<string> _messages = new List<string>();
+        private readonly List<(LogLevel Level, string Message)> _entries = new List<(LogLevel, string)>();
 
         /// <summary>
         /// Gets the categories loggers were created for.
@@ -32,10 +32,24 @@ namespace NetlifyDnsManager.Tests
         {
             get
             {
-                lock (_messages)
+                lock (_entries)
                 {
-                    return _messages.ToList();
+                    return _entries.Select(entry => entry.Message).ToList();
                 }
+            }
+        }
+
+        /// <summary>
+        /// Gets the messages that were logged at the given level, which is what an operator running
+        /// with logging turned down does and does not get to see.
+        /// </summary>
+        /// <param name="level">The level to read.</param>
+        /// <returns>The messages logged at that level.</returns>
+        public IReadOnlyList<string> MessagesAt(LogLevel level)
+        {
+            lock (_entries)
+            {
+                return _entries.Where(entry => entry.Level == level).Select(entry => entry.Message).ToList();
             }
         }
 
@@ -57,11 +71,11 @@ namespace NetlifyDnsManager.Tests
         {
         }
 
-        private void Record(string message)
+        private void Record(LogLevel level, string message)
         {
-            lock (_messages)
+            lock (_entries)
             {
-                _messages.Add(message);
+                _entries.Add((level, message));
             }
         }
 
@@ -80,7 +94,7 @@ namespace NetlifyDnsManager.Tests
 
             public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
             {
-                _factory.Record(formatter(state, exception));
+                _factory.Record(logLevel, formatter(state, exception));
             }
         }
     }
