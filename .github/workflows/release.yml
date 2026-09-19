@@ -21,7 +21,7 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Run tests
-        run: dotnet test NetlifyDnsManager.Tests/NetlifyDnsManager.Tests.csproj --filter "FullyQualifiedName~ClientsConfiguration|FullyQualifiedName~ClientAuthValidation|FullyQualifiedName~DnsUpdateService|FullyQualifiedName~DnsUpdateEndpointAuthorization|FullyQualifiedName~ClientWorkerIpCaching" -c Release
+        run: dotnet test NetlifyDnsManager.Tests/NetlifyDnsManager.Tests.csproj --filter "TestCategory!=Integration" -c Release
 
       - name: Publish for Linux ARM 64
         run: |
